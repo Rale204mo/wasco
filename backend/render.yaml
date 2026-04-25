@@ -27,4 +27,4 @@ services:
     staticPublishPath: frontend/build
     envVars:
       - key: REACT_APP_API_URL
-        value: https://wasco-billing-backend.onrender.com/api
+        value: https://wasco-billing-c3hz.onrender.com
