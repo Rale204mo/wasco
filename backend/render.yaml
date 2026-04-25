@@ -1,0 +1,30 @@
+services:
+  # Backend API
+  - type: web
+    name: wasco-billing-backend
+    runtime: node
+    repo: https://github.com/your-username/wasco-billing
+    plan: free
+    buildCommand: cd backend && npm install
+    startCommand: cd backend && node server.js
+    envVars:
+      - key: NEON_DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: FIREBASE_PROJECT_ID
+        value: wasco-2512c
+      - key: FIREBASE_CLIENT_EMAIL
+        sync: false
+      - key: FIREBASE_PRIVATE_KEY
+        sync: false
+
+  # Frontend Static Site
+  - type: static
+    name: wasco-billing-frontend
+    repo: https://github.com/your-username/wasco-billing
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: frontend/build
+    envVars:
+      - key: REACT_APP_API_URL
+        value: https://wasco-billing-backend.onrender.com/api
