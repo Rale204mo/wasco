@@ -28,7 +28,7 @@ const auth = getAuth(app);
 const googleProvider = new GoogleAuthProvider();
 
 // API URL
-const API_URL = 'http://localhost:5000/api';
+const API_URL = 'https://wasco-billing-c3hz.onrender.com/api';
 
 function Login({ setUser, darkMode, toggleDarkMode }) {
   const [email, setEmail] = useState('');
