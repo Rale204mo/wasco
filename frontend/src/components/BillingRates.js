@@ -3,7 +3,6 @@ import { Card, Table, Button, Modal, Form, Alert, Spinner, Badge } from 'react-b
 import { FaPlus, FaEdit, FaTrash, FaSave, FaTimes } from 'react-icons/fa';
 import api from '../services/api';
 
-
 function BillingRates({ darkMode }) {
   const [rates, setRates] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -25,9 +24,11 @@ function BillingRates({ darkMode }) {
     setLoading(true);
     try {
       const response = await api.get('/billing-rates');
-      setRates(response.data);
+      setRates(response.data || []);
     } catch (error) {
-      showAlert('Error fetching billing rates', 'danger');
+      console.error('Error fetching rates:', error);
+      showAlert('Failed to load billing rates from database', 'danger');
+      setRates([]);
     } finally {
       setLoading(false);
     }
@@ -45,19 +46,31 @@ function BillingRates({ darkMode }) {
     }
 
     try {
+      const rateData = {
+        tier: formData.tier,
+        min_usage: parseInt(formData.min_usage) || 0,
+        max_usage: formData.max_usage ? parseInt(formData.max_usage) : null,
+        cost_per_unit: parseFloat(formData.cost_per_unit)
+      };
+
       if (editingRate) {
-        await api.put(`/billing-rates/${editingRate.id}`, formData);
+        // Update existing rate via API
+        await api.put(`/billing-rates/${editingRate.id}`, rateData);
         showAlert('Rate updated successfully', 'success');
       } else {
-        await api.post('/billing-rates', formData);
+        // Create new rate via API
+        await api.post('/billing-rates', rateData);
         showAlert('Rate created successfully', 'success');
       }
+
+      await fetchRates(); // Refresh data from database
       setShowModal(false);
       setEditingRate(null);
       setFormData({ tier: '', min_usage: '', max_usage: '', cost_per_unit: '' });
-      fetchRates();
     } catch (error) {
-      showAlert('Error saving rate', 'danger');
+      console.error('Error saving rate:', error);
+      const errorMsg = error.response?.data?.error || 'Error saving rate to database';
+      showAlert(errorMsg, 'danger');
     }
   };
 
@@ -66,9 +79,11 @@ function BillingRates({ darkMode }) {
       try {
         await api.delete(`/billing-rates/${id}`);
         showAlert('Rate deleted successfully', 'success');
-        fetchRates();
+        await fetchRates(); // Refresh data from database
       } catch (error) {
-        showAlert('Error deleting rate', 'danger');
+        console.error('Error deleting rate:', error);
+        const errorMsg = error.response?.data?.error || 'Error deleting rate';
+        showAlert(errorMsg, 'danger');
       }
     }
   };
@@ -77,9 +92,9 @@ function BillingRates({ darkMode }) {
     setEditingRate(rate);
     setFormData({
       tier: rate.tier,
-      min_usage: rate.min_usage,
-      max_usage: rate.max_usage,
-      cost_per_unit: rate.cost_per_unit
+      min_usage: rate.min_usage?.toString() || '',
+      max_usage: rate.max_usage?.toString() || '',
+      cost_per_unit: rate.cost_per_unit.toString()
     });
     setShowModal(true);
   };
@@ -104,7 +119,11 @@ function BillingRates({ darkMode }) {
       <Card>
         <Card.Header className="d-flex justify-content-between align-items-center">
           <h5 className="mb-0">Water Billing Rates</h5>
-          <Button size="sm" onClick={() => { setEditingRate(null); setFormData({ tier: '', min_usage: '', max_usage: '', cost_per_unit: '' }); setShowModal(true); }}>
+          <Button size="sm" onClick={() => { 
+            setEditingRate(null); 
+            setFormData({ tier: '', min_usage: '', max_usage: '', cost_per_unit: '' }); 
+            setShowModal(true); 
+          }}>
             <FaPlus className="me-1" /> Add Rate
           </Button>
         </Card.Header>
@@ -120,24 +139,39 @@ function BillingRates({ darkMode }) {
               </tr>
             </thead>
             <tbody>
-              {rates.map(rate => (
-                <tr key={rate.id}>
-                  <td><strong>{rate.tier}</strong></td>
-                  <td>{rate.min_usage || '0'} </td>
-                  <td>{rate.max_usage ? `${rate.max_usage}+` : 'Unlimited'} </td>
-                  <td>M {parseFloat(rate.cost_per_unit).toFixed(2)} </td>
-                  <td>
-                    <Button variant="warning" size="sm" className="me-2" onClick={() => handleEdit(rate)}>
-                      <FaEdit /> Edit
-                    </Button>
-                    <Button variant="danger" size="sm" onClick={() => handleDelete(rate.id)}>
-                      <FaTrash /> Delete
-                    </Button>
-                   </td>
-                 </tr>
-              ))}
+              {rates.length === 0 ? (
+                <tr>
+                  <td colSpan="5" className="text-center text-muted py-4">
+                    No billing rates found. Add one above.
+                  </td>
+                </tr>
+              ) : (
+                rates.map(rate => (
+                  <tr key={rate.id}>
+                    <td><strong>{rate.tier}</strong></td>
+                    <td>{rate.min_usage || 0}</td>
+                    <td>{rate.max_usage ? `${rate.max_usage}` : 'Unlimited'}</td>
+                    <td>M {parseFloat(rate.cost_per_unit).toFixed(2)}</td>
+                    <td>
+                      <Button variant="warning" size="sm" className="me-2" onClick={() => handleEdit(rate)}>
+                        <FaEdit /> Edit
+                      </Button>
+                      <Button variant="danger" size="sm" onClick={() => handleDelete(rate.id)}>
+                        <FaTrash /> Delete
+                      </Button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </Table>
+          
+          <div className="mt-3 p-3 bg-light rounded">
+            <h6>Bill Calculation Formula:</h6>
+            <p className="small text-muted mb-0">
+              Water bills are calculated based on the tiered rates above. Usage is charged at the rate corresponding to each tier.
+            </p>
+          </div>
         </Card.Body>
       </Card>
 
@@ -174,6 +208,9 @@ function BillingRates({ darkMode }) {
                 onChange={(e) => setFormData({...formData, max_usage: e.target.value})}
                 placeholder="Leave empty for unlimited"
               />
+              <Form.Text className="text-muted">
+                Leave blank for no upper limit
+              </Form.Text>
             </Form.Group>
             <Form.Group className="mb-3">
               <Form.Label>Cost per Unit (M) *</Form.Label>
@@ -201,3 +238,4 @@ function BillingRates({ darkMode }) {
 }
 
 export default BillingRates;
+

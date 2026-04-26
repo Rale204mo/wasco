@@ -278,4 +278,31 @@ router.post('/verify', async (req, res) => {
     }
 });
 
+// Authentication middleware
+const authenticateToken = async (req, res, next) => {
+    const token = req.headers.authorization?.split(' ')[1];
+    
+    if (!token) {
+        return res.status(401).json({ error: 'No token provided' });
+    }
+    
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded;
+        next();
+    } catch (error) {
+        res.status(401).json({ error: 'Invalid token' });
+    }
+};
+
+// Admin/Manager middleware
+const requireAdmin = (req, res, next) => {
+    if (!req.user || (req.user.role !== 'admin' && req.user.role !== 'manager')) {
+        return res.status(403).json({ error: 'Admin or Manager access required' });
+    }
+    next();
+};
+
 module.exports = router;
+module.exports.authenticateToken = authenticateToken;
+module.exports.requireAdmin = requireAdmin;
