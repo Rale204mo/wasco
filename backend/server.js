@@ -59,6 +59,7 @@ const billRoutes = require('./routes/bills');
 const dashboardRoutes = require('./routes/dashboard');
 const customerRoutes = require('./routes/customers');
 const billingRatesRoutes = require('./routes/billingRates');
+const reportsRoutes = require('./routes/reports');
 
 // Use routes
 app.use('/api/auth', authRoutes);
@@ -67,6 +68,7 @@ app.use('/api/bills', billRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/billing-rates', billingRatesRoutes);
+app.use('/api/reports', reportsRoutes);
 
 // Health check endpoint
 app.get('/health', async (req, res) => {
