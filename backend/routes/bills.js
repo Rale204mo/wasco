@@ -227,7 +227,7 @@ router.get('/customer/:accountNumber', verifyToken, async (req, res) => {
 
 // Make payment
 router.post('/pay', verifyToken, async (req, res) => {
-    const { billId, amount, paymentMethod } = req.body;
+    const { billId, amount, paymentMethod, cardLast4, cardHolder } = req.body;
     
     if (!billId || !amount) {
         return res.status(400).json({ error: 'Bill ID and amount are required' });
@@ -248,10 +248,10 @@ router.post('/pay', verifyToken, async (req, res) => {
         
         const transactionId = `TXN${Date.now()}${Math.floor(Math.random() * 1000)}`;
         const paymentResult = await pool.query(`
-            INSERT INTO payments (bill_id, account_number, amount, transaction_id, payment_method, payment_date)
-            VALUES ($1, $2, $3, $4, $5, NOW())
+            INSERT INTO payments (bill_id, account_number, amount, transaction_id, payment_method, card_last4, card_holder, payment_date)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
             RETURNING *
-        `, [billId, bill.account_number, amount, transactionId, paymentMethod || 'CREDIT_CARD']);
+        `, [billId, bill.account_number, amount, transactionId, paymentMethod || 'CREDIT_CARD', cardLast4 || null, cardHolder || null]);
         
         await pool.query(`
             UPDATE bills 

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, Table, Button, Badge, Spinner, Alert, Modal, Form, Row, Col } from 'react-bootstrap';
 import { FaCreditCard, FaCheckCircle, FaEye } from 'react-icons/fa';
 import api from '../services/api';
+import PaymentModal from './PaymentModal';
 
 function MyBills({ accountNumber, darkMode }) {
   const [bills, setBills] = useState([]);
@@ -143,70 +144,15 @@ function MyBills({ accountNumber, darkMode }) {
       </Card>
 
       {/* Payment Modal */}
-      <Modal show={showPaymentModal} onHide={() => setShowPaymentModal(false)} size="lg">
-        <Modal.Header closeButton>
-          <Modal.Title>Pay Bill - {selectedBill?.bill_number}</Modal.Title>
-        </Modal.Header>
-        <Modal.Body>
-          <Row>
-            <Col md={6}>
-              <Card className="mb-3">
-                <Card.Body>
-                  <h6>Bill Summary</h6>
-                  <hr />
-                  <div className="d-flex justify-content-between mb-2">
-                    <span>Bill Month:</span>
-                    <strong>{selectedBill && new Date(selectedBill.month).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</strong>
-                  </div>
-                  <div className="d-flex justify-content-between mb-2">
-                    <span>Consumption:</span>
-                    <strong>{selectedBill?.consumption} m³</strong>
-                  </div>
-                  <div className="d-flex justify-content-between mb-2">
-                    <span>Due Date:</span>
-                    <strong>{selectedBill && new Date(selectedBill.due_date).toLocaleDateString()}</strong>
-                  </div>
-                  <hr />
-                  <div className="d-flex justify-content-between">
-                    <h5>Total Amount:</h5>
-                    <h5 className="text-primary">M {selectedBill?.total_amount}</h5>
-                  </div>
-                </Card.Body>
-              </Card>
-            </Col>
-            <Col md={6}>
-              <Form>
-                <Form.Group className="mb-3">
-                  <Form.Label>Amount to Pay</Form.Label>
-                  <Form.Control 
-                    type="number" 
-                    value={paymentAmount}
-                    onChange={(e) => setPaymentAmount(e.target.value)}
-                    max={selectedBill?.total_amount}
-                  />
-                </Form.Group>
-                <Form.Group className="mb-3">
-                  <Form.Label>Payment Method</Form.Label>
-                  <Form.Select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)}>
-                    <option value="credit_card">Credit / Debit Card</option>
-                    <option value="bank_transfer">Bank Transfer</option>
-                    <option value="mobile_money">Mobile Money</option>
-                    <option value="cash">Cash (At WASCO Office)</option>
-                  </Form.Select>
-                </Form.Group>
-                <div className="alert alert-info small">
-                  <FaCheckCircle className="me-2" />
-                  You will receive a confirmation after successful payment.
-                </div>
-              </Form>
-            </Col>
-          </Row>
-        </Modal.Body>
-        <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowPaymentModal(false)}>Cancel</Button>
-          <Button variant="success" onClick={handlePayment}>Pay M {paymentAmount}</Button>
-        </Modal.Footer>
-      </Modal>
+      <PaymentModal
+        show={showPaymentModal}
+        onHide={() => setShowPaymentModal(false)}
+        bill={selectedBill}
+        onPaymentSuccess={() => {
+          showAlert('Payment successful!', 'success');
+          fetchBills();
+        }}
+      />
     </>
   );
 }
