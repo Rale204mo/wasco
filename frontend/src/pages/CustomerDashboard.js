@@ -3,6 +3,7 @@ import { Container, Row, Col, Card, Table, Button, Modal, Form, Alert, Spinner, 
 import Sidebar from '../components/Sidebar';
 import MyBills from '../components/MyBills';
 import PaymentHistory from '../components/PaymentHistory';
+import MyUsage from '../components/MyUsage';
 import PaymentModal from '../components/PaymentModal';
 import api from '../services/api';
 import { 
