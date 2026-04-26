@@ -1,5 +1,4 @@
-// Simple fetch-based API client - NO axios dependency needed
-// Use the LIVE backend URL for production
+// Simple fetch-based API client
 const API_BASE_URL = 'https://wasco-billing-c3hz.onrender.com/api';
 
 const api = {
