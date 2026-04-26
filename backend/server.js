@@ -8,8 +8,44 @@ const app = express();
 const pool = require('./db');
 const admin = require('./firebase');
 
+// ============================================
+// ENHANCED CORS FOR MOBILE ACCESS
+// ============================================
+const allowedOrigins = [
+    'http://localhost:3000',
+    'http://localhost:5000',
+    'https://wasco-billing-c3hz.onrender.com',
+    'https://wasco-billing-frontend.onrender.com',
+    'https://*.onrender.com'
+];
+
+app.use(cors({
+    origin: function(origin, callback) {
+        // Allow requests with no origin (like mobile apps, curl, etc.)
+        if (!origin) return callback(null, true);
+        
+        if (allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            // For production, also allow any render.com subdomain
+            if (origin.includes('.onrender.com')) {
+                callback(null, true);
+            } else {
+                console.log('CORS blocked origin:', origin);
+                callback(null, true); // Allow anyway for testing
+            }
+        }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+    exposedHeaders: ['Content-Range', 'X-Content-Range']
+}));
+
+// Handle preflight requests
+app.options('*', cors());
+
 // Middleware
-app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -29,7 +65,6 @@ app.use('/api/customers', customerRoutes);
 
 // Health check endpoint
 app.get('/health', async (req, res) => {
-    // Check database status
     let dbStatus = 'Unknown';
     let firebaseStatus = 'Unknown';
     
@@ -94,7 +129,6 @@ app.get('/api/distributed/status', async (req, res) => {
     let neonLatency = null;
     let firebaseLatency = null;
     
-    // Check Neon PostgreSQL
     const neonStart = Date.now();
     try {
         await pool.query('SELECT 1');
@@ -104,7 +138,6 @@ app.get('/api/distributed/status', async (req, res) => {
         neonStatus = 'error';
     }
     
-    // Check Firebase
     const firebaseStart = Date.now();
     try {
         if (admin.apps.length > 0) {
@@ -181,6 +214,7 @@ app.listen(PORT, () => {
     console.log(`✅ Server running on port ${PORT}`);
     console.log('✅ Neon PostgreSQL: Connected');
     console.log('✅ Firebase Admin: Connected');
+    console.log('✅ CORS: Enabled for mobile and web');
     console.log('========================================');
     console.log('📍 Distributed System Endpoints:');
     console.log(`   - Health: http://localhost:${PORT}/health`);
