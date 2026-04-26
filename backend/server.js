@@ -16,7 +16,10 @@ const allowedOrigins = [
     'http://localhost:5000',
     'https://wasco-billing-c3hz.onrender.com',
     'https://wasco-billing-frontend.onrender.com',
-    'https://*.onrender.com'
+    'https://*.onrender.com',
+    'https://wasco-billing-frontend.vercel.app',
+    'https://wasco-billing-frontend-c6b9ng0vr-leakays-projects.vercel.app',
+    'https://*.vercel.app'
 ];
 
 app.use(cors({

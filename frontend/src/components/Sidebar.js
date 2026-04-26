@@ -39,6 +39,22 @@ function Sidebar({ role, activePage, setActivePage, onLogout, darkMode, toggleDa
 
   const items = menuItems[role] || menuItems.customer;
 
+  // Handle logout with proper cleanup
+  const handleLogout = () => {
+    // Close mobile menu if open
+    setShowMobileMenu(false);
+    
+    // Call the parent logout function
+    if (onLogout) {
+      onLogout();
+    } else {
+      // Fallback logout
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.location.href = '/login';
+    }
+  };
+
   // Desktop Sidebar Content
   const SidebarContent = () => (
     <>
@@ -63,7 +79,8 @@ function Sidebar({ role, activePage, setActivePage, onLogout, darkMode, toggleDa
               padding: '12px 16px',
               margin: '4px 0',
               borderRadius: '8px',
-              backgroundColor: activePage === item.key ? 'rgba(255,255,255,0.2)' : 'transparent'
+              backgroundColor: activePage === item.key ? 'rgba(255,255,255,0.2)' : 'transparent',
+              transition: 'all 0.2s ease'
             }}
           >
             <span className="me-3">{item.icon}</span>
@@ -85,7 +102,7 @@ function Sidebar({ role, activePage, setActivePage, onLogout, darkMode, toggleDa
         <Button 
           variant="outline-danger" 
           className="w-100 d-flex align-items-center justify-content-center gap-2"
-          onClick={onLogout}
+          onClick={handleLogout}
           style={{ padding: '10px' }}
         >
           <FaSignOutAlt size={18} />
@@ -183,10 +200,7 @@ function Sidebar({ role, activePage, setActivePage, onLogout, darkMode, toggleDa
             <Button 
               variant="outline-danger" 
               className="w-100 d-flex align-items-center justify-content-center gap-2"
-              onClick={() => {
-                onLogout();
-                setShowMobileMenu(false);
-              }}
+              onClick={handleLogout}
             >
               <FaSignOutAlt />
               Logout

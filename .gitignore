@@ -273,3 +273,4 @@ screenshots/
 # Temporary user uploads
 temp/
 tmp_uploads/
+.vercel
