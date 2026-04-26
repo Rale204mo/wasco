@@ -1,5 +1,6 @@
 // Simple fetch-based API client - NO axios dependency needed
-const API_BASE_URL =process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+// Use the LIVE backend URL for production
+const API_BASE_URL = 'https://wasco-billing-c3hz.onrender.com/api';
 
 const api = {
     get: async (endpoint) => {
