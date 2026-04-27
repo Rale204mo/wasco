@@ -27,6 +27,8 @@ function Sidebar({ role, activePage, setActivePage, onLogout, darkMode, toggleDa
       { key: 'monthly', label: 'Monthly Report', icon: <FaCalendarAlt /> },
       { key: 'quarterly', label: 'Quarterly Report', icon: <FaCalendarAlt /> },
       { key: 'yearly', label: 'Yearly Report', icon: <FaCalendarAlt /> },
+      { key: 'customers', label: 'Customers', icon: <FaUsers /> },
+      { key: 'payments', label: 'Payments', icon: <FaCreditCard /> },
       { key: 'bills', label: 'Bills Overview', icon: <FaFileInvoiceDollar /> },
     ],
     customer: [

@@ -1,6 +1,7 @@
 ﻿{
   "short_name": "WASCO Billing",
-  "name": "WASCO Water Billing",
+  "name": "WASCO Water Billing System",
+  "icons": [],
   "start_url": ".",
   "display": "standalone",
   "theme_color": "#0d6efd",

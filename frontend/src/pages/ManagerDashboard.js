@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Row, Col, Card, Table, Button, Spinner, Alert } from 'react-bootstrap';
+import { Container, Row, Col, Card, Table, Button, Spinner, Alert, Modal, Form, Badge } from 'react-bootstrap';
 import Sidebar from '../components/Sidebar';
 import { LineChart, BarChart, DoughnutChart } from '../components/Charts';
 import api from '../services/api';
@@ -7,7 +7,7 @@ import {
   FaChartLine, FaCalendarAlt, FaFileInvoiceDollar,
   FaTint, FaMoneyBillWave, FaDownload, FaEye,
   FaBuilding, FaUsers, FaPercent, FaWater,
-  FaExclamationTriangle
+  FaExclamationTriangle, FaUserPlus, FaCreditCard, FaCheckCircle
 } from 'react-icons/fa';
 
 function ManagerDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
@@ -19,6 +19,17 @@ function ManagerDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
   const [reportData, setReportData] = useState(null);
   const [timeRange, setTimeRange] = useState('monthly');
   const [alertMsg, setAlertMsg] = useState({ show: false, message: '', variant: 'success' });
+
+  /* ─── new state for customers & payments ─── */
+  const [customers, setCustomers] = useState([]);
+  const [pendingUsers, setPendingUsers] = useState([]);
+  const [payments, setPayments] = useState([]);
+  const [showCustomerModal, setShowCustomerModal] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [customerForm, setCustomerForm] = useState({ userId: '', name: '', address: '', phone: '' });
+  const [paymentForm, setPaymentForm] = useState({ billId: '', amount: '', paymentMethod: 'CREDIT_CARD', cardLast4: '', cardHolder: '' });
+  const [selectedBill, setSelectedBill] = useState(null);
+  const [unpaidBills, setUnpaidBills] = useState([]);
 
   /* ─────────── data fetching ─────────── */
   useEffect(() => { fetchAll(); }, []);
@@ -46,6 +57,23 @@ function ManagerDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
       else if (activePage === 'bills') {
         const b = await api.get('/bills/all');
         setBills(b.data || []);
+      }
+      else if (activePage === 'customers') {
+        const [c, p] = await Promise.all([
+          api.get('/customers/all'),
+          api.get('/customers/pending-users')
+        ]);
+        setCustomers(c.data || []);
+        setPendingUsers(p.data || []);
+      }
+      else if (activePage === 'payments') {
+        const [pay, b] = await Promise.all([
+          api.get('/reports/all-payments'),
+          api.get('/bills/all')
+        ]);
+        setPayments(pay.data || []);
+        setBills(b.data || []);
+        setUnpaidBills((b.data || []).filter(x => x.payment_status === 'UNPAID'));
       }
       else {
         // daily / weekly / monthly / quarterly / yearly
@@ -91,6 +119,77 @@ function ManagerDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
     a.click();
     window.URL.revokeObjectURL(url);
     showAlert('CSV exported successfully', 'success');
+  };
+
+  /* ─── customer actions ─── */
+  const handleCreateCustomer = async () => {
+    if (!customerForm.userId || !customerForm.name) {
+      showAlert('User ID and Name are required', 'warning');
+      return;
+    }
+    setLoading(true);
+    try {
+      await api.post('/customers/create', customerForm);
+      showAlert('Customer profile created successfully', 'success');
+      setShowCustomerModal(false);
+      setCustomerForm({ userId: '', name: '', address: '', phone: '' });
+      // refresh
+      const [c, p] = await Promise.all([
+        api.get('/customers/all'),
+        api.get('/customers/pending-users')
+      ]);
+      setCustomers(c.data || []);
+      setPendingUsers(p.data || []);
+    } catch (error) {
+      showAlert('Error creating customer: ' + (error.response?.data?.error || error.message), 'danger');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /* ─── payment actions ─── */
+  const openPaymentModal = (bill) => {
+    setSelectedBill(bill);
+    setPaymentForm({
+      billId: bill.id,
+      amount: bill.total_amount,
+      paymentMethod: 'CREDIT_CARD',
+      cardLast4: '',
+      cardHolder: ''
+    });
+    setShowPaymentModal(true);
+  };
+
+  const handleRecordPayment = async () => {
+    if (!paymentForm.billId || !paymentForm.amount) {
+      showAlert('Bill and amount are required', 'warning');
+      return;
+    }
+    setLoading(true);
+    try {
+      await api.post('/bills/pay', {
+        billId: paymentForm.billId,
+        amount: parseFloat(paymentForm.amount),
+        paymentMethod: paymentForm.paymentMethod,
+        cardLast4: paymentForm.cardLast4,
+        cardHolder: paymentForm.cardHolder
+      });
+      showAlert('Payment recorded successfully', 'success');
+      setShowPaymentModal(false);
+      setPaymentForm({ billId: '', amount: '', paymentMethod: 'CREDIT_CARD', cardLast4: '', cardHolder: '' });
+      // refresh
+      const [pay, b] = await Promise.all([
+        api.get('/reports/all-payments'),
+        api.get('/bills/all')
+      ]);
+      setPayments(pay.data || []);
+      setBills(b.data || []);
+      setUnpaidBills((b.data || []).filter(x => x.payment_status === 'UNPAID'));
+    } catch (error) {
+      showAlert('Error recording payment: ' + (error.response?.data?.error || error.message), 'danger');
+    } finally {
+      setLoading(false);
+    }
   };
 
   /* ─────────── KPI helpers ─────────── */
@@ -277,6 +376,173 @@ function ManagerDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
     </Card>
   );
 
+  /* ─────────── CUSTOMERS PAGE ─────────── */
+  const renderCustomersPage = () => (
+    <>
+      <div className="d-flex justify-content-between align-items-center mb-4">
+        <h3>Customer Management</h3>
+        <Button variant="primary" onClick={() => setShowCustomerModal(true)}>
+          <FaUserPlus className="me-2" /> Create Customer Profile
+        </Button>
+      </div>
+
+      {/* Pending Users to be enrolled */}
+      {pendingUsers.length > 0 && (
+        <Card className="mb-4 border-warning">
+          <Card.Header className="bg-warning text-dark">
+            <FaExclamationTriangle className="me-2" />
+            Pending Enrollment ({pendingUsers.length} user{pendingUsers.length !== 1 ? 's' : ''} without customer profile)
+          </Card.Header>
+          <Card.Body>
+            <Table striped hover responsive size="sm">
+              <thead>
+                <tr><th>ID</th><th>Email</th><th>Full Name</th><th>Role</th><th>Created</th><th>Action</th></tr>
+              </thead>
+              <tbody>
+                {pendingUsers.map(u => (
+                  <tr key={u.id}>
+                    <td>{u.id}</td>
+                    <td>{u.email}</td>
+                    <td>{u.full_name || '-'}</td>
+                    <td><Badge bg="info">{u.role}</Badge></td>
+                    <td>{u.created_at ? new Date(u.created_at).toLocaleDateString() : '-'}</td>
+                    <td>
+                      <Button size="sm" variant="success" onClick={() => {
+                        setCustomerForm({ userId: u.id, name: u.full_name || u.email, address: '', phone: '' });
+                        setShowCustomerModal(true);
+                      }}>
+                        <FaUserPlus className="me-1" /> Enroll
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          </Card.Body>
+        </Card>
+      )}
+
+      {/* All Customers */}
+      <Card>
+        <Card.Header><h5 className="mb-0">All Customers ({customers.length})</h5></Card.Header>
+        <Card.Body>
+          <Table striped hover responsive>
+            <thead>
+              <tr>
+                <th>Account #</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Phone</th>
+                <th>Address</th>
+                <th>Joined</th>
+              </tr>
+            </thead>
+            <tbody>
+              {customers.length === 0 ? (
+                <tr><td colSpan="6" className="text-center text-muted">No customers found</td></tr>
+              ) : (
+                customers.map(c => (
+                  <tr key={c.id}>
+                    <td><code>{c.account_number}</code></td>
+                    <td>{c.name}</td>
+                    <td>{c.email || c.full_name || '-'}</td>
+                    <td>{c.phone || '-'}</td>
+                    <td>{c.address || '-'}</td>
+                    <td>{c.created_at ? new Date(c.created_at).toLocaleDateString() : '-'}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </Table>
+        </Card.Body>
+      </Card>
+    </>
+  );
+
+  /* ─────────── PAYMENTS PAGE ─────────── */
+  const renderPaymentsPage = () => (
+    <>
+      <div className="d-flex justify-content-between align-items-center mb-4">
+        <h3>Payments</h3>
+        <Button variant="primary" onClick={() => setShowPaymentModal(true)}>
+          <FaCreditCard className="me-2" /> Record Payment
+        </Button>
+      </div>
+
+      {/* Unpaid Bills Quick Actions */}
+      {unpaidBills.length > 0 && (
+        <Card className="mb-4 border-danger">
+          <Card.Header className="bg-danger text-white">
+            <FaExclamationTriangle className="me-2" />
+            Unpaid Bills ({unpaidBills.length}) — Click "Pay" to record payment
+          </Card.Header>
+          <Card.Body>
+            <Table striped hover responsive size="sm">
+              <thead>
+                <tr><th>Bill #</th><th>Account</th><th>Customer</th><th>Amount</th><th>Due Date</th><th>Action</th></tr>
+              </thead>
+              <tbody>
+                {unpaidBills.map(b => (
+                  <tr key={b.id}>
+                    <td>{b.bill_number}</td>
+                    <td>{b.account_number}</td>
+                    <td>{b.customer_name || '-'}</td>
+                    <td className="fw-bold text-danger">M {Number(b.total_amount).toLocaleString()}</td>
+                    <td className={new Date(b.due_date) < new Date() ? 'text-danger fw-bold' : ''}>
+                      {b.due_date ? new Date(b.due_date).toLocaleDateString() : '-'}
+                    </td>
+                    <td>
+                      <Button size="sm" variant="success" onClick={() => openPaymentModal(b)}>
+                        <FaCheckCircle className="me-1" /> Pay
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          </Card.Body>
+        </Card>
+      )}
+
+      {/* All Payments History */}
+      <Card>
+        <Card.Header><h5 className="mb-0">Payment History ({payments.length})</h5></Card.Header>
+        <Card.Body>
+          <Table striped hover responsive>
+            <thead>
+              <tr>
+                <th>Transaction ID</th>
+                <th>Bill #</th>
+                <th>Customer</th>
+                <th>Account</th>
+                <th>Amount</th>
+                <th>Method</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {payments.length === 0 ? (
+                <tr><td colSpan="7" className="text-center text-muted">No payments recorded</td></tr>
+              ) : (
+                payments.map(p => (
+                  <tr key={p.id}>
+                    <td><code>{p.transaction_id || '-'}</code></td>
+                    <td>{p.bill_number || '-'}</td>
+                    <td>{p.customer_name || '-'}</td>
+                    <td>{p.account_number || '-'}</td>
+                    <td className="fw-bold text-success">M {Number(p.amount).toLocaleString()}</td>
+                    <td><Badge bg="secondary">{p.payment_method || '-'}</Badge></td>
+                    <td>{p.payment_date ? new Date(p.payment_date).toLocaleDateString() : '-'}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </Table>
+        </Card.Body>
+      </Card>
+    </>
+  );
+
   /* ─────────── report pages (daily / weekly / monthly / quarterly / yearly) ─────────── */
   const getPeriodTitle = () => {
     const titles = { daily: 'Daily Report', weekly: 'Weekly Report', monthly: 'Monthly Report', quarterly: 'Quarterly Report', yearly: 'Yearly Report' };
@@ -364,6 +630,8 @@ function ManagerDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
     }
 
     if (activePage === 'bills') return renderBillsPage();
+    if (activePage === 'customers') return renderCustomersPage();
+    if (activePage === 'payments') return renderPaymentsPage();
 
     // period reports
     return renderReportPage();
@@ -420,9 +688,129 @@ function ManagerDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
           {renderContent()}
         </Container>
       </div>
+
+      {/* ─── Create Customer Modal ─── */}
+      <Modal show={showCustomerModal} onHide={() => setShowCustomerModal(false)} backdrop="static">
+        <Modal.Header closeButton>
+          <Modal.Title><FaUserPlus className="me-2" />Create Customer Profile</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <Form>
+            <Form.Group className="mb-3">
+              <Form.Label>User ID</Form.Label>
+              <Form.Control
+                type="number"
+                value={customerForm.userId}
+                onChange={(e) => setCustomerForm({ ...customerForm, userId: e.target.value })}
+                placeholder="Select a user from pending list or enter ID"
+              />
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Full Name</Form.Label>
+              <Form.Control
+                type="text"
+                value={customerForm.name}
+                onChange={(e) => setCustomerForm({ ...customerForm, name: e.target.value })}
+                placeholder="Customer full name"
+              />
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Address</Form.Label>
+              <Form.Control
+                type="text"
+                value={customerForm.address}
+                onChange={(e) => setCustomerForm({ ...customerForm, address: e.target.value })}
+                placeholder="Customer address"
+              />
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Phone</Form.Label>
+              <Form.Control
+                type="text"
+                value={customerForm.phone}
+                onChange={(e) => setCustomerForm({ ...customerForm, phone: e.target.value })}
+                placeholder="Customer phone number"
+              />
+            </Form.Group>
+          </Form>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowCustomerModal(false)}>Cancel</Button>
+          <Button variant="primary" onClick={handleCreateCustomer} disabled={loading}>
+            {loading ? <Spinner size="sm" animation="border" /> : 'Create Profile'}
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* ─── Record Payment Modal ─── */}
+      <Modal show={showPaymentModal} onHide={() => setShowPaymentModal(false)} backdrop="static">
+        <Modal.Header closeButton>
+          <Modal.Title><FaCreditCard className="me-2" />Record Payment</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <Form>
+            <Form.Group className="mb-3">
+              <Form.Label>Bill ID</Form.Label>
+              <Form.Control
+                type="number"
+                value={paymentForm.billId}
+                onChange={(e) => setPaymentForm({ ...paymentForm, billId: e.target.value })}
+                placeholder="Enter bill ID or click Pay on an unpaid bill"
+              />
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Amount (M)</Form.Label>
+              <Form.Control
+                type="number"
+                step="0.01"
+                value={paymentForm.amount}
+                onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+              />
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Payment Method</Form.Label>
+              <Form.Select
+                value={paymentForm.paymentMethod}
+                onChange={(e) => setPaymentForm({ ...paymentForm, paymentMethod: e.target.value })}
+              >
+                <option value="CREDIT_CARD">Credit Card</option>
+                <option value="BANK_TRANSFER">Bank Transfer</option>
+                <option value="CASH">Cash</option>
+                <option value="MOBILE_MONEY">Mobile Money</option>
+              </Form.Select>
+            </Form.Group>
+            {paymentForm.paymentMethod === 'CREDIT_CARD' && (
+              <>
+                <Form.Group className="mb-3">
+                  <Form.Label>Card Last 4 Digits</Form.Label>
+                  <Form.Control
+                    type="text"
+                    maxLength="4"
+                    value={paymentForm.cardLast4}
+                    onChange={(e) => setPaymentForm({ ...paymentForm, cardLast4: e.target.value })}
+                  />
+                </Form.Group>
+                <Form.Group className="mb-3">
+                  <Form.Label>Card Holder</Form.Label>
+                  <Form.Control
+                    type="text"
+                    value={paymentForm.cardHolder}
+                    onChange={(e) => setPaymentForm({ ...paymentForm, cardHolder: e.target.value })}
+                  />
+                </Form.Group>
+              </>
+            )}
+          </Form>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowPaymentModal(false)}>Cancel</Button>
+          <Button variant="success" onClick={handleRecordPayment} disabled={loading}>
+            {loading ? <Spinner size="sm" animation="border" /> : 'Record Payment'}
+          </Button>
+        </Modal.Footer>
+      </Modal>
     </div>
   );
 }
 
 export default ManagerDashboard;
-

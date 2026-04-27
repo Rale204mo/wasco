@@ -132,4 +132,25 @@ router.get('/account/:accountNumber', verifyToken, async (req, res) => {
     }
 });
 
+// Get users without customer profiles (Admin/Manager only)
+router.get('/pending-users', verifyToken, async (req, res) => {
+    if (req.user.role === 'customer') {
+        return res.status(403).json({ error: 'Unauthorized' });
+    }
+    
+    try {
+        const result = await pool.query(`
+            SELECT u.id, u.email, u.full_name, u.role, u.created_at
+            FROM users u
+            LEFT JOIN customers c ON u.id = c.user_id
+            WHERE c.id IS NULL
+            ORDER BY u.created_at DESC
+        `);
+        res.json(result.rows);
+    } catch (error) {
+        console.error('Error fetching pending users:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 module.exports = router;
