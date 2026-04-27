@@ -20,8 +20,11 @@ function AdminDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
   const [customers, setCustomers] = useState([]);
   const [bills, setBills] = useState([]);
   const [payments, setPayments] = useState([]);
+  const [unpaidBills, setUnpaidBills] = useState([]);
   const [showUserModal, setShowUserModal] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [userForm, setUserForm] = useState({ email: '', full_name: '', role: 'customer', password: '' });
+  const [paymentForm, setPaymentForm] = useState({ billId: '', amount: '', paymentMethod: 'CREDIT_CARD', cardLast4: '', cardHolder: '' });
   const [alert, setAlert] = useState({ show: false, message: '', variant: 'success' });
 
   useEffect(() => {
@@ -44,8 +47,12 @@ function AdminDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
         const response = await api.get('/bills/all');
         setBills(response.data);
       } else if (activePage === 'payments') {
-        const response = await api.get('/bills/all');
-        setPayments(response.data);
+        const [payRes, billsRes] = await Promise.all([
+          api.get('/reports/all-payments'),
+          api.get('/bills/all')
+        ]);
+        setPayments(payRes.data || []);
+        setUnpaidBills((billsRes.data || []).filter(b => b.payment_status === 'UNPAID'));
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -91,6 +98,33 @@ function AdminDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
       } catch (error) {
         showAlert('Error deleting user', 'danger');
       }
+    }
+  };
+
+  const handleRecordPayment = async () => {
+    if (!paymentForm.billId || !paymentForm.amount) {
+      showAlert('Please select a bill and enter amount', 'warning');
+      return;
+    }
+    setLoading(true);
+    try {
+      const response = await api.post('/bills/pay', {
+        billId: parseInt(paymentForm.billId),
+        amount: parseFloat(paymentForm.amount),
+        paymentMethod: paymentForm.paymentMethod,
+        cardLast4: paymentForm.cardLast4,
+        cardHolder: paymentForm.cardHolder
+      });
+      if (response.data.success) {
+        showAlert('Payment recorded successfully', 'success');
+        setShowPaymentModal(false);
+        setPaymentForm({ billId: '', amount: '', paymentMethod: 'CREDIT_CARD', cardLast4: '', cardHolder: '' });
+        fetchData();
+      }
+    } catch (error) {
+      showAlert('Error recording payment: ' + (error.response?.data?.error || error.message), 'danger');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -250,31 +284,89 @@ function AdminDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
   );
 
   const renderPayments = () => (
-    <Card>
-      <Card.Header><h5 className="mb-0">Payments</h5></Card.Header>
-      <Card.Body>
-        <Table striped hover responsive>
-          <thead>
-            <tr>
-              <th>Transaction ID</th>
-              <th>Bill #</th>
-              <th>Amount</th>
-              <th>Date</th>
-            </tr>
-          </thead>
-          <tbody>
-            {payments.filter(p => p.transaction_id).map(p => (
-              <tr key={p.id}>
-                <td><code>{p.transaction_id}</code></td>
-                <td>{p.bill_number}</td>
-                <td>M {p.total_amount}</td>
-                <td>{new Date(p.payment_date).toLocaleDateString()}</td>
+    <>
+      <Card className="mb-4">
+        <Card.Header className="d-flex justify-content-between align-items-center">
+          <h5 className="mb-0">Unpaid Bills — Quick Pay</h5>
+          <Button variant="success" size="sm" onClick={() => setShowPaymentModal(true)}>
+            <FaCheckCircle className="me-1" /> Record Payment
+          </Button>
+        </Card.Header>
+        <Card.Body>
+          <Table striped hover responsive size="sm">
+            <thead>
+              <tr>
+                <th>Bill #</th>
+                <th>Customer</th>
+                <th>Account</th>
+                <th>Amount</th>
+                <th>Due Date</th>
+                <th>Action</th>
               </tr>
-            ))}
-          </tbody>
-        </Table>
-      </Card.Body>
-    </Card>
+            </thead>
+            <tbody>
+              {unpaidBills.length === 0 ? (
+                <tr><td colSpan="6" className="text-center text-muted">No unpaid bills</td></tr>
+              ) : (
+                unpaidBills.slice(0, 10).map(b => (
+                  <tr key={b.id}>
+                    <td>{b.bill_number}</td>
+                    <td>{b.customer_name || '-'}</td>
+                    <td>{b.account_number}</td>
+                    <td className="fw-bold">M {Number(b.total_amount).toLocaleString()}</td>
+                    <td className={new Date(b.due_date) < new Date() ? 'text-danger' : ''}>
+                      {b.due_date ? new Date(b.due_date).toLocaleDateString() : '-'}
+                    </td>
+                    <td>
+                      <Button variant="success" size="sm" onClick={() => {
+                        setPaymentForm({ ...paymentForm, billId: b.id, amount: b.total_amount });
+                        setShowPaymentModal(true);
+                      }}>
+                        <FaCheckCircle />
+                      </Button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </Table>
+        </Card.Body>
+      </Card>
+
+      <Card>
+        <Card.Header><h5 className="mb-0">Payment History</h5></Card.Header>
+        <Card.Body>
+          <Table striped hover responsive>
+            <thead>
+              <tr>
+                <th>Transaction ID</th>
+                <th>Customer</th>
+                <th>Bill #</th>
+                <th>Amount</th>
+                <th>Method</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {payments.length === 0 ? (
+                <tr><td colSpan="6" className="text-center text-muted">No payments recorded yet</td></tr>
+              ) : (
+                payments.map(p => (
+                  <tr key={p.id}>
+                    <td><code>{p.transaction_id}</code></td>
+                    <td>{p.customer_name || '-'}</td>
+                    <td>{p.bill_number}</td>
+                    <td className="fw-bold">M {Number(p.amount).toLocaleString()}</td>
+                    <td>{p.payment_method}</td>
+                    <td>{p.payment_date ? new Date(p.payment_date).toLocaleDateString() : '-'}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </Table>
+        </Card.Body>
+      </Card>
+    </>
   );
 
   const renderContent = () => {
@@ -398,6 +490,84 @@ function AdminDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
         <Modal.Footer>
           <Button variant="secondary" onClick={() => setShowUserModal(false)}>Cancel</Button>
           <Button variant="primary" onClick={handleCreateUser}>Add User</Button>
+        </Modal.Footer>
+      </Modal>
+
+      {/* Record Payment Modal */}
+      <Modal show={showPaymentModal} onHide={() => setShowPaymentModal(false)}>
+        <Modal.Header closeButton>
+          <Modal.Title>Record Payment</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <Form>
+            <Form.Group className="mb-3">
+              <Form.Label>Select Unpaid Bill</Form.Label>
+              <Form.Select
+                value={paymentForm.billId}
+                onChange={(e) => {
+                  const selected = unpaidBills.find(b => b.id === parseInt(e.target.value));
+                  setPaymentForm({
+                    ...paymentForm,
+                    billId: e.target.value,
+                    amount: selected ? selected.total_amount : ''
+                  });
+                }}
+              >
+                <option value="">-- Select Bill --</option>
+                {unpaidBills.map(b => (
+                  <option key={b.id} value={b.id}>
+                    {b.bill_number} — {b.customer_name || b.account_number} — M {Number(b.total_amount).toLocaleString()}
+                  </option>
+                ))}
+              </Form.Select>
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Amount (M)</Form.Label>
+              <Form.Control
+                type="number"
+                step="0.01"
+                value={paymentForm.amount}
+                onChange={(e) => setPaymentForm({...paymentForm, amount: e.target.value})}
+                required
+              />
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Payment Method</Form.Label>
+              <Form.Select
+                value={paymentForm.paymentMethod}
+                onChange={(e) => setPaymentForm({...paymentForm, paymentMethod: e.target.value})}
+              >
+                <option value="CREDIT_CARD">Credit Card</option>
+                <option value="DEBIT_CARD">Debit Card</option>
+                <option value="CASH">Cash</option>
+                <option value="BANK_TRANSFER">Bank Transfer</option>
+                <option value="MOBILE_MONEY">Mobile Money</option>
+              </Form.Select>
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Card Last 4 Digits (optional)</Form.Label>
+              <Form.Control
+                type="text"
+                maxLength="4"
+                value={paymentForm.cardLast4}
+                onChange={(e) => setPaymentForm({...paymentForm, cardLast4: e.target.value})}
+              />
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Card Holder Name (optional)</Form.Label>
+              <Form.Control
+                type="text"
+                value={paymentForm.cardHolder}
+                onChange={(e) => setPaymentForm({...paymentForm, cardHolder: e.target.value})}
+              />
+            </Form.Group>
+          </Form>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowPaymentModal(false)}>Cancel</Button>
+          <Button variant="success" onClick={handleRecordPayment}>
+            <FaCheckCircle className="me-1" /> Record Payment
+          </Button>
         </Modal.Footer>
       </Modal>
     </div>

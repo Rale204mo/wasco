@@ -14,4 +14,5 @@
 - [x] Step 4: Update ManagerDashboard.js - add renderCustomersPage with table and create modal
 - [x] Step 5: Update ManagerDashboard.js - add renderPaymentsPage with table and record modal
 - [x] Step 6: Update ManagerDashboard.js - update renderContent to route new pages
+- [x] Step 7: Deploy frontend to Vercel production
 
