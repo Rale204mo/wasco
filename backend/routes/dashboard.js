@@ -23,7 +23,7 @@ router.get('/customer/:userId', verifyToken, async (req, res) => {
     try {
         // Get customer account
         const customer = await pool.query(
-            'SELECT account_number, name FROM customers WHERE user_id = $1',
+            'SELECT id, account_number, name FROM customers WHERE user_id = $1',
             [req.params.userId]
         );
         
@@ -32,6 +32,7 @@ router.get('/customer/:userId', verifyToken, async (req, res) => {
         }
         
         const accountNumber = customer.rows[0].account_number;
+        const customerId = customer.rows[0].id;
         
         // Get bills summary
         const billsResult = await pool.query(`
@@ -66,11 +67,29 @@ router.get('/customer/:userId', verifyToken, async (req, res) => {
             LIMIT 5
         `, [accountNumber]);
         
+        // Get unread feedback count
+        const feedbackResult = await pool.query(`
+            SELECT COUNT(*) as unread_count
+            FROM feedback
+            WHERE customer_id = $1 AND is_read = FALSE
+        `, [customerId]);
+        
+        // Get unpaid bills count
+        const unpaidBillsResult = await pool.query(`
+            SELECT COUNT(*) as unpaid_count
+            FROM bills
+            WHERE account_number = $1 AND payment_status = 'UNPAID'
+        `, [accountNumber]);
+        
         res.json({
             customer: customer.rows[0],
             summary: billsResult.rows[0],
             consumption_chart: consumptionResult.rows,
-            recent_payments: paymentsResult.rows
+            recent_payments: paymentsResult.rows,
+            notifications: {
+                unread_feedback: parseInt(feedbackResult.rows[0].unread_count) || 0,
+                unpaid_bills: parseInt(unpaidBillsResult.rows[0].unpaid_count) || 0
+            }
         });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -84,10 +103,8 @@ router.get('/manager', verifyToken, async (req, res) => {
     }
     
     try {
-        // Daily, Weekly, Monthly, Quarterly, Yearly stats
         const stats = {};
         
-        // Total revenue
         const revenueResult = await pool.query(`
             SELECT 
                 SUM(amount) as total_revenue,
@@ -97,7 +114,6 @@ router.get('/manager', verifyToken, async (req, res) => {
         `);
         stats.current_month_revenue = revenueResult.rows[0];
         
-        // Outstanding amounts
         const outstandingResult = await pool.query(`
             SELECT 
                 COUNT(*) as unpaid_bills,
@@ -107,7 +123,6 @@ router.get('/manager', verifyToken, async (req, res) => {
         `);
         stats.outstanding = outstandingResult.rows[0];
         
-        // Monthly revenue for chart (last 6 months)
         const monthlyRevenue = await pool.query(`
             SELECT 
                 TO_CHAR(DATE_TRUNC('month', payment_date), 'Mon YYYY') as month,
@@ -120,7 +135,6 @@ router.get('/manager', verifyToken, async (req, res) => {
         `);
         stats.monthly_revenue = monthlyRevenue.rows;
         
-        // Water usage trends
         const usageTrends = await pool.query(`
             SELECT 
                 TO_CHAR(month, 'Mon YYYY') as month,
@@ -133,7 +147,6 @@ router.get('/manager', verifyToken, async (req, res) => {
         `);
         stats.usage_trends = usageTrends.rows;
         
-        // Collection rate
         const collectionResult = await pool.query(`
             SELECT 
                 SUM(CASE WHEN payment_status = 'PAID' THEN total_amount ELSE 0 END) as collected,
@@ -157,7 +170,6 @@ router.get('/admin', verifyToken, async (req, res) => {
     }
     
     try {
-        // User counts
         const userStats = await pool.query(`
             SELECT 
                 role,
@@ -166,12 +178,10 @@ router.get('/admin', verifyToken, async (req, res) => {
             GROUP BY role
         `);
         
-        // Customer accounts
         const customerStats = await pool.query(`
             SELECT COUNT(*) as total_customers FROM customers
         `);
         
-        // Bill statistics
         const billStats = await pool.query(`
             SELECT 
                 payment_status,

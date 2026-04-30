@@ -3,7 +3,7 @@ import { Nav, Button, Offcanvas } from 'react-bootstrap';
 import { 
   FaTint, FaTachometerAlt, FaUsers, FaFileInvoiceDollar, 
   FaChartLine, FaSignOutAlt, FaSun, FaMoon,
-  FaCalendarAlt, FaWater, FaCreditCard, FaBars
+  FaCalendarAlt, FaWater, FaCreditCard, FaBars, FaEnvelope
 } from 'react-icons/fa';
 
 function Sidebar({ role, activePage, setActivePage, onLogout, darkMode, toggleDarkMode }) {
@@ -19,6 +19,8 @@ function Sidebar({ role, activePage, setActivePage, onLogout, darkMode, toggleDa
       { key: 'water-usage', label: 'Water Usage', icon: <FaWater /> },
       { key: 'payments', label: 'Payments', icon: <FaCreditCard /> },
       { key: 'reports', label: 'Reports', icon: <FaChartLine /> },
+      { key: 'leakage-reports', label: 'Leakage Reports', icon: <FaTint /> },
+      { key: 'customer-feedback', label: 'Customer Feedback', icon: <FaEnvelope /> },
     ],
     manager: [
       { key: 'dashboard', label: 'Analytics Dashboard', icon: <FaChartLine /> },
@@ -30,34 +32,31 @@ function Sidebar({ role, activePage, setActivePage, onLogout, darkMode, toggleDa
       { key: 'customers', label: 'Customers', icon: <FaUsers /> },
       { key: 'payments', label: 'Payments', icon: <FaCreditCard /> },
       { key: 'bills', label: 'Bills Overview', icon: <FaFileInvoiceDollar /> },
+      { key: 'leakage-reports', label: 'Leakage Reports', icon: <FaTint /> },
     ],
     customer: [
       { key: 'dashboard', label: 'My Dashboard', icon: <FaTachometerAlt /> },
       { key: 'my-bills', label: 'My Bills', icon: <FaFileInvoiceDollar /> },
       { key: 'payment-history', label: 'Payment History', icon: <FaCalendarAlt /> },
       { key: 'my-usage', label: 'My Usage', icon: <FaWater /> },
+      { key: 'report-leakage', label: 'Report Leakage', icon: <FaTint /> },
+      { key: 'my-feedback', label: 'My Feedback', icon: <FaEnvelope /> },
     ]
   };
 
   const items = menuItems[role] || menuItems.customer;
 
-  // Handle logout with proper cleanup
   const handleLogout = () => {
-    // Close mobile menu if open
     setShowMobileMenu(false);
-    
-    // Call the parent logout function
     if (onLogout) {
       onLogout();
     } else {
-      // Fallback logout
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.href = '/login';
     }
   };
 
-  // Desktop Sidebar Content
   const SidebarContent = () => (
     <>
       <div className="p-3 text-center border-bottom" style={{ borderBottomColor: 'rgba(255,255,255,0.1)' }}>

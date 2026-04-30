@@ -24,18 +24,16 @@ const allowedOrigins = [
 
 app.use(cors({
     origin: function(origin, callback) {
-        // Allow requests with no origin (like mobile apps, curl, etc.)
         if (!origin) return callback(null, true);
         
         if (allowedOrigins.indexOf(origin) !== -1) {
             callback(null, true);
         } else {
-            // For production, also allow any render.com subdomain
             if (origin.includes('.onrender.com')) {
                 callback(null, true);
             } else {
                 console.log('CORS blocked origin:', origin);
-                callback(null, true); // Allow anyway for testing
+                callback(null, true);
             }
         }
     },
@@ -60,6 +58,8 @@ const dashboardRoutes = require('./routes/dashboard');
 const customerRoutes = require('./routes/customers');
 const billingRatesRoutes = require('./routes/billingRates');
 const reportsRoutes = require('./routes/reports');
+const leakageRoutes = require('./routes/leakage');
+const feedbackRoutes = require('./routes/feedback');
 
 // Use routes
 app.use('/api/auth', authRoutes);
@@ -69,6 +69,8 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/billing-rates', billingRatesRoutes);
 app.use('/api/reports', reportsRoutes);
+app.use('/api/leakage', leakageRoutes);
+app.use('/api/feedback', feedbackRoutes);
 
 // Health check endpoint
 app.get('/health', async (req, res) => {
@@ -98,7 +100,7 @@ app.get('/health', async (req, res) => {
             neon_postgresql: {
                 status: dbStatus,
                 type: 'Primary Database',
-                tables: ['users', 'customers', 'bills', 'payments', 'water_usage']
+                tables: ['users', 'customers', 'bills', 'payments', 'water_usage', 'leakage_reports', 'feedback']
             },
             firebase: {
                 status: firebaseStatus,
@@ -164,7 +166,7 @@ app.get('/api/distributed/status', async (req, res) => {
                 status: neonStatus,
                 latency_ms: neonLatency,
                 role: 'Primary Data Store',
-                tables_count: 5
+                tables_count: 7
             },
             firebase: {
                 status: firebaseStatus,
@@ -186,7 +188,7 @@ app.get('/api/distributed/status', async (req, res) => {
 app.get('/', (req, res) => {
     res.json({ 
         name: 'WASCO Water Billing System',
-        version: '2.0.0',
+        version: '2.1.0',
         architecture: 'Distributed Database System',
         databases: ['Neon PostgreSQL', 'Firebase'],
         endpoints: {
@@ -195,6 +197,8 @@ app.get('/', (req, res) => {
             bills: '/api/bills',
             dashboard: '/api/dashboard',
             customers: '/api/customers',
+            leakage: '/api/leakage',
+            feedback: '/api/feedback',
             health: '/health',
             sync: '/api/sync/force',
             distributed_status: '/api/distributed/status'
@@ -214,7 +218,7 @@ app.use((req, res) => {
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
     console.log('\n========================================');
     console.log('🚀 WASCO DISTRIBUTED DATABASE SYSTEM');
     console.log('========================================');
@@ -229,3 +233,26 @@ app.listen(PORT, () => {
     console.log(`   - Sync:   http://localhost:${PORT}/api/sync/force`);
     console.log('========================================\n');
 });
+
+server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.error(`\n❌ ERROR: Port ${PORT} is already in use!`);
+        console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('🔧 QUICK FIXES:');
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('Option 1: Use a different port');
+        console.log(`   → PORT=5001 npm start`);
+        console.log('Option 2: Find and kill the process using port 5000');
+        console.log('   → Windows: npx kill-port 5000');
+        console.log('   → Windows (PowerShell): Get-NetTCPConnection -LocalPort 5000 | Select-Object OwningProcess; Stop-Process -Id <PID>');
+        console.log('   → Windows (CMD): netstat -ano | findstr :5000 → taskkill /PID <PID> /F');
+        console.log('Option 3: Set environment variable in .env file:');
+        console.log('   → PORT=5001');
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+        process.exit(1);
+    } else {
+        console.error('\n❌ Server error:', err.message);
+        process.exit(1);
+    }
+});
+

@@ -268,7 +268,7 @@ function Login({ setUser, darkMode, toggleDarkMode }) {
                           value={fullName}
                           onChange={(e) => setFullName(e.target.value)}
                           required
-                          placeholder="John Doe"
+                          placeholder="bizo"
                         />
                       </Form.Group>
                       
