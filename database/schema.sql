@@ -156,3 +156,6 @@ BEGIN
     RAISE NOTICE '✅ Generated % bills for current month', v_bill_count;
 END;
 $$;
+
+-- Add receipt_path column to payments table for proof of payment downloads
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS receipt_path VARCHAR(255);

@@ -49,6 +49,7 @@ app.options('*', cors());
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use('/receipts', express.static('public/receipts'));
 
 // Import routes
 const authRoutes = require('./routes/auth');

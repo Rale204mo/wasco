@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const jwt = require('jsonwebtoken');
+const PDFDocument = require('pdfkit');
+const fs = require('fs-extra');
+const path = require('path');
 
 // Middleware to verify JWT
 const verifyToken = (req, res, next) => {
@@ -248,11 +251,62 @@ router.post('/pay', verifyToken, async (req, res) => {
         
         const transactionId = `TXN${Date.now()}${Math.floor(Math.random() * 1000)}`;
         const paymentResult = await pool.query(`
-            INSERT INTO payments (bill_id, account_number, amount, transaction_id, payment_method, card_last4, card_holder, payment_date)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+            INSERT INTO payments (bill_id, account_number, amount, transaction_id, payment_method, card_last4, card_holder, receipt_path, payment_date)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
             RETURNING *
-        `, [billId, bill.account_number, amount, transactionId, paymentMethod || 'CREDIT_CARD', cardLast4 || null, cardHolder || null]);
-        
+        `, [billId, bill.account_number, amount, transactionId, paymentMethod || 'CREDIT_CARD', cardLast4 || null, cardHolder || null, null]);
+        // Generate receipt PDF
+        const payment = paymentResult.rows[0];
+        const receiptPath = `/receipts/${payment.id}_${Date.now()}.pdf`;
+        const fullReceiptPath = path.join(__dirname, '..', 'public', 'receipts', `${payment.id}_${Date.now()}.pdf`);
+
+        // Ensure directory exists
+        await fs.ensureDir(path.dirname(fullReceiptPath));
+
+        // Get customer details
+        const customerResult = await pool.query('SELECT * FROM customers WHERE account_number = $1', [bill.account_number]);
+        const customer = customerResult.rows[0] || {};
+
+        // Create PDF
+        const doc = new PDFDocument({ margin: 50 });
+        doc.pipe(fs.createWriteStream(fullReceiptPath));
+
+        // Header
+        doc.fontSize(20).text('WASCO Water Authority', { align: 'center' });
+        doc.fontSize(12).text('Payment Receipt', { align: 'center' });
+        doc.moveDown();
+
+        // Receipt details
+        doc.fontSize(14).text(`Receipt #${payment.id}`, { continued: true }).text(`Date: ${new Date().toLocaleDateString()}`);
+        doc.moveDown();
+
+        doc.text(`Transaction ID: ${transactionId}`);
+        doc.text(`Account Number: ${bill.account_number}`);
+        doc.text(`Customer: ${customer.name || 'N/A'} | ${customer.phone || 'N/A'}`);
+        doc.text(`Bill Number: ${bill.bill_number}`);
+        doc.text(`Month: ${new Date(bill.month).toLocaleDateString()}`);
+        doc.text(`Consumption: ${bill.consumption} m³`);
+        doc.text(`Payment Method: ${paymentMethod || 'CREDIT_CARD'}`);
+        if (cardLast4) doc.text(`Card Last 4: **** **** **** ${cardLast4}`);
+        if (cardHolder) doc.text(`Card Holder: ${cardHolder}`);
+        doc.moveDown(0.5);
+
+        doc.fontSize(16).text(`Amount Paid: Maloti M ${parseFloat(amount).toLocaleString()}`, { align: 'right' });
+        doc.moveDown();
+
+        doc.text('Thank you for your payment!', { align: 'center' });
+        doc.text('This is your official receipt.', { underline: true, align: 'center' });
+        doc.moveDown();
+
+        // Footer
+        doc.fontSize(10).text('WASCO Customer Service: +265 1 123 456', { align: 'center' });
+        doc.text('Email: support@wasco.mw', { align: 'center' });
+
+        doc.end();
+
+        // Update payment with receipt path
+        await pool.query('UPDATE payments SET receipt_path = $1 WHERE id = $2', [receiptPath, payment.id]);
+
         await pool.query(`
             UPDATE bills 
             SET payment_status = 'PAID', payment_date = CURRENT_DATE
@@ -261,8 +315,9 @@ router.post('/pay', verifyToken, async (req, res) => {
         
         res.json({ 
             success: true, 
-            payment: paymentResult.rows[0],
-            message: 'Payment successful'
+            payment: { ...payment, receipt_path: receiptPath },
+            message: 'Payment successful. Receipt generated.',
+            receipt_url: `http://localhost:5000${receiptPath}` // Adjust for production
         });
     } catch (error) {
         console.error('Payment error:', error);
