@@ -6,6 +6,10 @@ const PaymentModal = ({ show, onHide, billId, bill, onPaymentSuccess }) => {
   const resolvedBillId = billId || bill?.id;
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState('mpesa');
+  const [mpesaNumber, setMpesaNumber] = useState('');
+  const [ecocashNumber, setEcocashNumber] = useState('');
+  const [bankReference, setBankReference] = useState('');
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
@@ -31,24 +35,49 @@ const PaymentModal = ({ show, onHide, billId, bill, onPaymentSuccess }) => {
       return;
     }
 
+    if (method === 'mpesa' && !mpesaNumber.trim()) {
+      setError('Please enter your M-Pesa number');
+      return;
+    }
+
+    if (method === 'ecocash' && !ecocashNumber.trim()) {
+      setError('Please enter your EcoCash number');
+      return;
+    }
+
+    if (method === 'bank' && !bankReference.trim()) {
+      setError('Please enter your bank reference/account number');
+      return;
+    }
+
     const finalBillId = resolvedBillId;
     try {
       setLoading(true);
       setError(null);
-      await api.post('/bills/pay', { 
+      const paymentPayload = {
         billId: finalBillId,
         amount: parseFloat(amount),
         paymentMethod: method.toUpperCase(),
-        cardLast4: '1234',
-        cardHolder: 'Test User'
-      });
+        card_last4: '1234',
+        card_holder: 'Test User',
+      };
+
+      if (method === 'mpesa') {
+        paymentPayload.mpesaNumber = mpesaNumber;
+      } else if (method === 'ecocash') {
+        paymentPayload.ecocashNumber = ecocashNumber;
+      } else if (method === 'bank') {
+        paymentPayload.bankReference = bankReference;
+      }
+
+      await api.post('/bills/pay', paymentPayload);
       setSuccess(true);
       setTimeout(() => {
         onHide();
         if (onPaymentSuccess) onPaymentSuccess();
       }, 1500);
     } catch (err) {
-      setError('Payment failed. Please try again.');
+      setError(err?.response?.data?.error || 'Payment failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -95,6 +124,48 @@ const PaymentModal = ({ show, onHide, billId, bill, onPaymentSuccess }) => {
               <option value="bank">Bank Transfer</option>
             </Form.Select>
           </Form.Group>
+
+          {method === 'mpesa' && (
+            <Form.Group className="mb-3">
+              <Form.Label>M-Pesa Number</Form.Label>
+              <Form.Control
+                type="text"
+                inputMode="numeric"
+                placeholder="e.g. 09xxxxxxxx"
+                value={mpesaNumber}
+                onChange={(e) => setMpesaNumber(e.target.value)}
+                required
+              />
+            </Form.Group>
+          )}
+
+          {method === 'ecocash' && (
+            <Form.Group className="mb-3">
+              <Form.Label>EcoCash Number</Form.Label>
+              <Form.Control
+                type="text"
+                inputMode="numeric"
+                placeholder="e.g. 07xxxxxxxx"
+                value={ecocashNumber}
+                onChange={(e) => setEcocashNumber(e.target.value)}
+                required
+              />
+            </Form.Group>
+          )}
+
+          {method === 'bank' && (
+            <Form.Group className="mb-3">
+              <Form.Label>Reference / Account Number</Form.Label>
+              <Form.Control
+                type="text"
+                placeholder="e.g. bank reference"
+                value={bankReference}
+                onChange={(e) => setBankReference(e.target.value)}
+                required
+              />
+            </Form.Group>
+          )}
+
           <Button variant="primary" type="submit" disabled={loading}>
             {loading ? <Spinner size="sm" /> : 'Pay Now'}
           </Button>
