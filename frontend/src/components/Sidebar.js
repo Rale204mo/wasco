@@ -59,38 +59,43 @@ function Sidebar({ role, activePage, setActivePage, onLogout, darkMode, toggleDa
 
   const SidebarContent = () => (
     <>
+      {/* Fixed Header */}
       <div className="p-3 text-center border-bottom" style={{ borderBottomColor: 'rgba(255,255,255,0.1)' }}>
         <FaTint size={40} className="text-white mb-2" />
         <h5 className="text-white mb-0">WASCO Billing</h5>
         <small className="text-white-50">Water & Sewerage Co.</small>
       </div>
       
-      <Nav className="flex-column p-3 flex-grow-1">
-        {items.map(item => (
-          <Nav.Link 
-            key={item.key}
-            onClick={() => {
-              setActivePage(item.key);
-              setShowMobileMenu(false);
-            }}
-            className={activePage === item.key ? 'active' : ''}
-            style={{ 
-              cursor: 'pointer',
-              color: 'white',
-              padding: '12px 16px',
-              margin: '4px 0',
-              borderRadius: '8px',
-              backgroundColor: activePage === item.key ? 'rgba(255,255,255,0.2)' : 'transparent',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            <span className="me-3">{item.icon}</span>
-            <span className="menu-label">{item.label}</span>
-          </Nav.Link>
-        ))}
-      </Nav>
+      {/* Scrollable Menu Area */}
+      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+        <Nav className="flex-column p-3">
+          {items.map(item => (
+            <Nav.Link 
+              key={item.key}
+              onClick={() => {
+                setActivePage(item.key);
+                setShowMobileMenu(false);
+              }}
+              className={activePage === item.key ? 'active' : ''}
+              style={{ 
+                cursor: 'pointer',
+                color: 'white',
+                padding: '12px 16px',
+                margin: '4px 0',
+                borderRadius: '8px',
+                backgroundColor: activePage === item.key ? 'rgba(255,255,255,0.2)' : 'transparent',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              <span className="me-3">{item.icon}</span>
+              <span className="menu-label">{item.label}</span>
+            </Nav.Link>
+          ))}
+        </Nav>
+      </div>
       
-      <div className="p-3 mt-auto" style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+      {/* Fixed Footer */}
+      <div className="p-3" style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }}>
         <Button 
           variant="outline-light" 
           className="w-100 mb-2 d-flex align-items-center justify-content-center gap-2"
@@ -210,19 +215,21 @@ function Sidebar({ role, activePage, setActivePage, onLogout, darkMode, toggleDa
         </Offcanvas.Body>
       </Offcanvas>
 
-      {/* Desktop Sidebar - Hidden on mobile */}
+      {/* Desktop Sidebar - Scrollable Menu */}
       <div 
         className="sidebar d-none d-md-flex flex-column" 
         style={{ 
           width: '280px', 
-          minHeight: '100vh',
-          backgroundColor: darkMode ? '#1a1a2e' : '#0d6efd',
-          color: 'white',
+          height: '100vh',
           position: 'fixed',
           left: 0,
           top: 0,
           bottom: 0,
-          zIndex: 100
+          backgroundColor: darkMode ? '#1a1a2e' : '#0d6efd',
+          color: 'white',
+          zIndex: 100,
+          flexDirection: 'column',
+          overflow: 'hidden'
         }}
       >
         <SidebarContent />

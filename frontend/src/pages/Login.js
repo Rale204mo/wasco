@@ -48,7 +48,7 @@ function Login({ setUser, darkMode, toggleDarkMode }) {
         localStorage.setItem('token', response.data.token);
         localStorage.setItem('user', JSON.stringify(response.data.user));
         setUser(response.data.user);
-        navigate('/');
+        navigate('/dashboard');
       }
       return response.data;
     } catch (err) {
@@ -118,7 +118,7 @@ function Login({ setUser, darkMode, toggleDarkMode }) {
         localStorage.setItem('user', JSON.stringify(response.data.user));
         setUser(response.data.user);
         console.log('5. Registration complete, redirecting...');
-        navigate('/');
+        navigate('/dashboard');
       }
     } catch (err) {
       console.error('Registration error:', err);
@@ -167,7 +167,7 @@ function Login({ setUser, darkMode, toggleDarkMode }) {
           localStorage.setItem('token', registerResponse.data.token);
           localStorage.setItem('user', JSON.stringify(registerResponse.data.user));
           setUser(registerResponse.data.user);
-          navigate('/');
+          navigate('/dashboard');
         }
       }
       
@@ -307,7 +307,7 @@ function Login({ setUser, darkMode, toggleDarkMode }) {
                   <p><strong>Admin:</strong> admin@wasco.com / password123</p>
                   <p><strong>Manager:</strong> manager@wasco.com / password123</p>
                   <p><strong>Customer:</strong> customer@wasco.com / password123</p>
-                  <p className="mt-2 text-warning">✨ You can also sign in with your Google/Gmail account!</p>
+                  <p className="mt-2 text-warning"> You can also sign in with your Google/Gmail account!</p>
                 </div>
               </Card.Body>
             </Card>
