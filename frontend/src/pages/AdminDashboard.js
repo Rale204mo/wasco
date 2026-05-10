@@ -7,7 +7,7 @@ import Reports from '../components/Reports';
 import AdminLeakageReports from '../components/AdminLeakageReports';
 import AdminFeedback from '../components/AdminFeedback';
 import api from '../services/api';
-import { FaUsers, FaFileInvoiceDollar, FaMoneyBillWave, FaExclamationTriangle, FaTrash, FaUserPlus, FaCheckCircle } from 'react-icons/fa';
+import { FaUsers, FaFileInvoiceDollar, FaMoneyBillWave, FaExclamationTriangle, FaTrash, FaUserPlus, FaCheckCircle, FaPlusCircle } from 'react-icons/fa';
 
 function AdminDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
   const [activePage, setActivePage] = useState('dashboard');
@@ -19,8 +19,16 @@ function AdminDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
   const [unpaidBills, setUnpaidBills] = useState([]);
   const [showUserModal, setShowUserModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showBillModal, setShowBillModal] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [userForm, setUserForm] = useState({ email: '', full_name: '', role: 'customer', password: '' });
   const [paymentForm, setPaymentForm] = useState({ billId: '', amount: '', paymentMethod: 'CREDIT_CARD', cardLast4: '', cardHolder: '' });
+  const [billForm, setBillForm] = useState({
+    accountNumber: '',
+    billingMonth: '',
+    currentReading: '',
+    previousReading: ''
+  });
   const [alert, setAlert] = useState({ show: false, message: '', variant: 'success' });
 
   useEffect(() => { fetchData(); }, [activePage]);
@@ -43,6 +51,34 @@ function AdminDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
   const handleCreateUser = async () => { if (!userForm.email || !userForm.password) { showAlert('Email and password required', 'warning'); return; } setLoading(true); try { await api.post('/users', userForm); showAlert('User created', 'success'); setShowUserModal(false); setUserForm({ email: '', full_name: '', role: 'customer', password: '' }); fetchData(); } catch (e) { showAlert('Error', 'danger'); } finally { setLoading(false); } };
   const handleDeleteUser = async (id) => { if (window.confirm('Are you sure?')) { try { await api.delete(`/users/${id}`); showAlert('Deleted', 'success'); fetchData(); } catch (e) { showAlert('Error', 'danger'); } } };
   const handleRecordPayment = async () => { if (!paymentForm.billId || !paymentForm.amount) { showAlert('Select bill and amount', 'warning'); return; } setLoading(true); try { await api.post('/bills/pay', { billId: parseInt(paymentForm.billId), amount: parseFloat(paymentForm.amount), paymentMethod: paymentForm.paymentMethod, cardLast4: paymentForm.cardLast4, cardHolder: paymentForm.cardHolder }); showAlert('Recorded', 'success'); setShowPaymentModal(false); fetchData(); } catch (e) { showAlert('Error', 'danger'); } finally { setLoading(false); } };
+
+  // Generate Bill using embedded SQL stored procedure
+  const handleGenerateBill = async () => {
+    if (!billForm.accountNumber || !billForm.billingMonth || !billForm.currentReading) {
+      showAlert('Please fill account number, billing month, and current reading', 'warning');
+      return;
+    }
+    setGenerating(true);
+    try {
+      const response = await api.post('/bills/generate-from-readings', {
+        accountNumber: billForm.accountNumber,
+        billingMonth: billForm.billingMonth,
+        currentReading: parseInt(billForm.currentReading),
+        previousReading: billForm.previousReading ? parseInt(billForm.previousReading) : null
+      });
+      if (response.data.success) {
+        showAlert(`Bill ${response.data.bill.bill_number} generated for M ${response.data.bill.total_amount}`, 'success');
+        setShowBillModal(false);
+        setBillForm({ accountNumber: '', billingMonth: '', currentReading: '', previousReading: '' });
+        // Refresh bills if currently on bills page
+        if (activePage === 'bills') fetchData();
+      }
+    } catch (error) {
+      showAlert('Error generating bill: ' + (error.response?.data?.error || error.message), 'danger');
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   const renderDashboard = () => {
     const dashboardStats = [
@@ -84,7 +120,9 @@ function AdminDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
           <tbody>
             {users.map(u => (
               <tr key={u.id}>
-                <td>{u.id}</td><td>{u.email}</td><td>{u.full_name || '-'}</td>
+                <td>{u.id}</td>
+                <td>{u.email}</td>
+                <td>{u.full_name || '-'}</td>
                 <td><Badge bg={u.role === 'admin' ? 'danger' : u.role === 'manager' ? 'warning' : 'info'}>{u.role}</Badge></td>
                 <td><Button variant="danger" size="sm" onClick={() => handleDeleteUser(u.id)}><FaTrash /></Button></td>
               </tr>
@@ -97,16 +135,24 @@ function AdminDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
 
   const renderBills = () => (
     <Card>
-      <Card.Header><h5 className="mb-0">All Bills</h5></Card.Header>
+      <Card.Header className="d-flex justify-content-between align-items-center">
+        <h5 className="mb-0">All Bills</h5>
+        <Button variant="success" size="sm" onClick={() => setShowBillModal(true)}>
+          <FaPlusCircle className="me-1" /> Generate Bill
+        </Button>
+      </Card.Header>
       <Card.Body>
         <Table striped hover responsive>
-          <thead><tr><th>Bill #</th><th>Account</th><th>Month</th><th>Amount</th><th>Status</th></tr></thead>
+          <thead>
+            <tr><th>Bill #</th><th>Account</th><th>Month</th><th>Amount</th><th>Status</th></tr>
+          </thead>
           <tbody>
             {bills.map(b => (
               <tr key={b.id}>
-                <td>{b.bill_number}</td><td>{b.account_number}</td>
+                <td>{b.bill_number}</td>
+                <td>{b.account_number}</td>
                 <td>{new Date(b.month).toLocaleDateString()}</td>
-                <td>M {b.total_amount}</td>
+                <td className="fw-bold">M {Number(b.total_amount).toLocaleString()}</td>
                 <td><Badge bg={b.payment_status === 'PAID' ? 'success' : 'danger'}>{b.payment_status}</Badge></td>
               </tr>
             ))}
@@ -121,19 +167,29 @@ function AdminDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
       <Card className="mb-4">
         <Card.Header className="d-flex justify-content-between align-items-center">
           <h5 className="mb-0">Unpaid Bills</h5>
-          <Button variant="success" size="sm" onClick={() => setShowPaymentModal(true)}><FaCheckCircle className="me-1" />Record Payment</Button>
+          <div>
+            <Button variant="success" size="sm" className="me-2" onClick={() => setShowPaymentModal(true)}><FaCheckCircle className="me-1" />Record Payment</Button>
+            <Button variant="info" size="sm" onClick={() => setShowBillModal(true)}><FaPlusCircle className="me-1" />Generate Bill</Button>
+          </div>
         </Card.Header>
         <Card.Body>
           <Table striped hover responsive size="sm">
-            <thead><tr><th>Bill #</th><th>Customer</th><th>Amount</th><th>Action</th></tr></thead>
+            <thead>
+              <tr><th>Bill #</th><th>Customer</th><th>Amount</th><th>Action</th></tr>
+            </thead>
             <tbody>
-              {unpaidBills.length === 0 ? (<tr><td colSpan="4" className="text-center text-muted">No unpaid bills</td></tr>) : unpaidBills.map(b => (
-                <tr key={b.id}>
-                  <td>{b.bill_number}</td><td>{b.customer_name || '-'}</td>
-                  <td className="fw-bold">M {Number(b.total_amount).toLocaleString()}</td>
-                  <td><Button variant="success" size="sm" onClick={() => { setPaymentForm({ ...paymentForm, billId: b.id, amount: b.total_amount }); setShowPaymentModal(true); }}><FaCheckCircle /></Button></td>
-                </tr>
-              ))}
+              {unpaidBills.length === 0 ? (
+                <tr><td colSpan="4" className="text-center text-muted">No unpaid bills</td></tr>
+              ) : (
+                unpaidBills.map(b => (
+                  <tr key={b.id}>
+                    <td>{b.bill_number}</td>
+                    <td>{b.customer_name || '-'}</td>
+                    <td className="fw-bold">M {Number(b.total_amount).toLocaleString()}</td>
+                    <td><Button variant="success" size="sm" onClick={() => { setPaymentForm({ ...paymentForm, billId: b.id, amount: b.total_amount }); setShowPaymentModal(true); }}><FaCheckCircle /></Button></td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </Table>
         </Card.Body>
@@ -142,11 +198,22 @@ function AdminDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
         <Card.Header><h5 className="mb-0">Payment History</h5></Card.Header>
         <Card.Body>
           <Table striped hover responsive>
-            <thead><tr><th>Transaction ID</th><th>Customer</th><th>Amount</th><th>Date</th></tr></thead>
+            <thead>
+              <tr><th>Transaction ID</th><th>Customer</th><th>Amount</th><th>Date</th></tr>
+            </thead>
             <tbody>
-              {payments.length === 0 ? (<tr><td colSpan="4" className="text-center text-muted">No payments</td></tr>) : payments.map(p => (
-                <tr key={p.id}><td><code>{p.transaction_id}</code></td><td>{p.customer_name || '-'}</td><td className="fw-bold">M {Number(p.amount).toLocaleString()}</td><td>{p.payment_date ? new Date(p.payment_date).toLocaleDateString() : '-'}</td></tr>
-              ))}
+              {payments.length === 0 ? (
+                <tr><td colSpan="4" className="text-center text-muted">No payments</td></tr>
+              ) : (
+                payments.map(p => (
+                  <tr key={p.id}>
+                    <td><code>{p.transaction_id}</code></td>
+                    <td>{p.customer_name || '-'}</td>
+                    <td className="fw-bold">M {Number(p.amount).toLocaleString()}</td>
+                    <td>{p.payment_date ? new Date(p.payment_date).toLocaleDateString() : '-'}</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </Table>
         </Card.Body>
@@ -189,6 +256,8 @@ function AdminDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
           {renderContent()}
         </Container>
       </div>
+
+      {/* Add User Modal (unchanged) */}
       <Modal show={showUserModal} onHide={() => setShowUserModal(false)}>
         <Modal.Header closeButton><Modal.Title>Add New User</Modal.Title></Modal.Header>
         <Modal.Body>
@@ -201,6 +270,8 @@ function AdminDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
         </Modal.Body>
         <Modal.Footer><Button variant="secondary" onClick={() => setShowUserModal(false)}>Cancel</Button><Button variant="primary" onClick={handleCreateUser}>Add User</Button></Modal.Footer>
       </Modal>
+
+      {/* Record Payment Modal (unchanged) */}
       <Modal show={showPaymentModal} onHide={() => setShowPaymentModal(false)}>
         <Modal.Header closeButton><Modal.Title>Record Payment</Modal.Title></Modal.Header>
         <Modal.Body>
@@ -211,6 +282,61 @@ function AdminDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
           </Form>
         </Modal.Body>
         <Modal.Footer><Button variant="secondary" onClick={() => setShowPaymentModal(false)}>Cancel</Button><Button variant="success" onClick={handleRecordPayment}><FaCheckCircle className="me-1" />Record</Button></Modal.Footer>
+      </Modal>
+
+      {/* Generate Bill Modal (new) */}
+      <Modal show={showBillModal} onHide={() => setShowBillModal(false)} size="lg">
+        <Modal.Header closeButton>
+          <Modal.Title>Generate New Bill (Embedded SQL)</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          <Form>
+            <Form.Group className="mb-3">
+              <Form.Label>Account Number *</Form.Label>
+              <Form.Control
+                type="text"
+                value={billForm.accountNumber}
+                onChange={(e) => setBillForm({...billForm, accountNumber: e.target.value})}
+                placeholder="e.g., WASCO2025001"
+              />
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Billing Month *</Form.Label>
+              <Form.Control
+                type="month"
+                value={billForm.billingMonth}
+                onChange={(e) => setBillForm({...billForm, billingMonth: e.target.value})}
+              />
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Current Meter Reading (m³) *</Form.Label>
+              <Form.Control
+                type="number"
+                value={billForm.currentReading}
+                onChange={(e) => setBillForm({...billForm, currentReading: e.target.value})}
+                placeholder="Enter current reading"
+              />
+            </Form.Group>
+            <Form.Group className="mb-3">
+              <Form.Label>Previous Reading (optional – leave empty to auto‑fetch)</Form.Label>
+              <Form.Control
+                type="number"
+                value={billForm.previousReading}
+                onChange={(e) => setBillForm({...billForm, previousReading: e.target.value})}
+                placeholder="Leave blank for automatic"
+              />
+              <Form.Text className="text-muted">
+                If left empty, the system will automatically use the last recorded reading.
+              </Form.Text>
+            </Form.Group>
+          </Form>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowBillModal(false)}>Cancel</Button>
+          <Button variant="primary" onClick={handleGenerateBill} disabled={generating}>
+            {generating ? 'Generating...' : 'Generate Bill'}
+          </Button>
+        </Modal.Footer>
       </Modal>
     </div>
   );

@@ -307,7 +307,7 @@ function Login({ setUser, darkMode, toggleDarkMode }) {
                   <p><strong>Admin:</strong> admin@wasco.com / password123</p>
                   <p><strong>Manager:</strong> manager@wasco.com / password123</p>
                   <p><strong>Customer:</strong> customer@wasco.com / password123</p>
-                  <p className="mt-2 text-warning"> You can also sign in with your Google/Gmail account!</p>
+                  <p className="mt-2 text-warning">✨ You can also sign in with your Google/Gmail account!</p>
                 </div>
               </Card.Body>
             </Card>

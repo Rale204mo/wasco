@@ -20,13 +20,49 @@ const verifyToken = (req, res, next) => {
     }
 };
 
-// Calculate bill based on consumption
+// Calculate bill based on consumption (fallback for sample data)
 const calculateBill = (consumption) => {
     if (consumption <= 15) return consumption * 5.50;
     if (consumption <= 30) return (15 * 5.50) + ((consumption - 15) * 8.75);
     if (consumption <= 50) return (15 * 5.50) + (15 * 8.75) + ((consumption - 30) * 12.00);
     return (15 * 5.50) + (15 * 8.75) + (20 * 12.00) + ((consumption - 50) * 15.50);
 };
+
+// =============================================
+// ADVANCED SQL / EMBEDDED SQL – Generate bill using PostgreSQL stored procedure
+// =============================================
+router.post('/generate-from-readings', verifyToken, async (req, res) => {
+    if (!['admin', 'manager'].includes(req.user.role)) {
+        return res.status(403).json({ error: 'Unauthorized – only admin or manager can generate bills' });
+    }
+
+    const { accountNumber, billingMonth, currentReading, previousReading } = req.body;
+
+    if (!accountNumber || !billingMonth || !currentReading) {
+        return res.status(400).json({ error: 'Account number, billing month, and current reading are required' });
+    }
+
+    try {
+        const result = await pool.query(
+            `SELECT * FROM generate_bill($1, $2, $3, $4)`,
+            [accountNumber, billingMonth, currentReading, previousReading || null]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(500).json({ error: 'Bill generation failed – no rows returned' });
+        }
+
+        const newBill = result.rows[0];
+        res.status(201).json({
+            success: true,
+            message: `Bill ${newBill.bill_number} generated successfully`,
+            bill: newBill
+        });
+    } catch (error) {
+        console.error('Bill generation error (stored procedure):', error);
+        res.status(500).json({ error: error.message });
+    }
+});
 
 // GENERATE SAMPLE DATA FOR TESTING
 router.post('/generate-sample', verifyToken, async (req, res) => {
@@ -37,7 +73,6 @@ router.post('/generate-sample', verifyToken, async (req, res) => {
     }
     
     try {
-        // Check if bills already exist for this account
         const existingBills = await pool.query(
             'SELECT COUNT(*) FROM bills WHERE account_number = $1',
             [accountNumber]
@@ -51,7 +86,6 @@ router.post('/generate-sample', verifyToken, async (req, res) => {
             });
         }
         
-        // Insert sample water usage for last 6 months (without ON CONFLICT)
         const sampleUsage = [
             { month: '2024-11-01', reading: 1000, previous: 950 },
             { month: '2024-12-01', reading: 1080, previous: 1000 },
@@ -62,12 +96,10 @@ router.post('/generate-sample', verifyToken, async (req, res) => {
         ];
         
         for (const usage of sampleUsage) {
-            // Check if exists first
             const check = await pool.query(
                 'SELECT id FROM water_usage WHERE account_number = $1 AND month = $2',
                 [accountNumber, usage.month]
             );
-            
             if (check.rows.length === 0) {
                 await pool.query(`
                     INSERT INTO water_usage (account_number, month, meter_reading, previous_reading)
@@ -76,7 +108,6 @@ router.post('/generate-sample', verifyToken, async (req, res) => {
             }
         }
         
-        // Insert sample bills
         const sampleBills = [
             { month: '2024-11-01', consumption: 50, amount: 275.00, due: '2024-12-01', status: 'PAID', billNum: 'BILL2024001' },
             { month: '2024-12-01', consumption: 80, amount: 440.00, due: '2025-01-05', status: 'PAID', billNum: 'BILL2024002' },
@@ -92,17 +123,13 @@ router.post('/generate-sample', verifyToken, async (req, res) => {
                 'SELECT id FROM bills WHERE account_number = $1 AND month = $2',
                 [accountNumber, bill.month]
             );
-            
             if (check.rows.length === 0) {
                 const result = await pool.query(`
                     INSERT INTO bills (bill_number, account_number, month, consumption, total_amount, due_date, payment_status)
                     VALUES ($1, $2, $3, $4, $5, $6, $7)
                     RETURNING *
                 `, [bill.billNum, accountNumber, bill.month, bill.consumption, bill.amount, bill.due, bill.status]);
-                
                 insertedBills.push(result.rows[0]);
-                
-                // Add payment records for paid bills
                 if (bill.status === 'PAID') {
                     await pool.query(`
                         INSERT INTO payments (bill_id, account_number, amount, transaction_id, payment_method, payment_date)
@@ -112,11 +139,7 @@ router.post('/generate-sample', verifyToken, async (req, res) => {
             }
         }
         
-        res.json({ 
-            success: true, 
-            message: `Generated ${insertedBills.length} sample bills`,
-            bills: insertedBills
-        });
+        res.json({ success: true, message: `Generated ${insertedBills.length} sample bills`, bills: insertedBills });
     } catch (error) {
         console.error('Generate sample error:', error);
         res.status(500).json({ error: error.message });
@@ -128,7 +151,6 @@ router.get('/payments/history/:accountNumber', verifyToken, async (req, res) => 
     const { accountNumber } = req.params;
     
     try {
-        // Check authorization
         if (req.user.role === 'customer') {
             const customer = await pool.query(
                 'SELECT account_number FROM customers WHERE user_id = $1',
@@ -154,7 +176,7 @@ router.get('/payments/history/:accountNumber', verifyToken, async (req, res) => 
     }
 });
 
-// Generate bills for all customers
+// Generate bills for all customers (legacy)
 router.post('/generate', verifyToken, async (req, res) => {
     const { month } = req.body;
     
@@ -228,7 +250,7 @@ router.get('/customer/:accountNumber', verifyToken, async (req, res) => {
     }
 });
 
-// Make payment
+// Make payment (with PDF receipt generation)
 router.post('/pay', verifyToken, async (req, res) => {
     const { billId, amount, paymentMethod, cardLast4, cardHolder } = req.body;
     
@@ -238,16 +260,9 @@ router.post('/pay', verifyToken, async (req, res) => {
     
     try {
         const billResult = await pool.query('SELECT * FROM bills WHERE id = $1', [billId]);
-        
-        if (billResult.rows.length === 0) {
-            return res.status(404).json({ error: 'Bill not found' });
-        }
-        
+        if (billResult.rows.length === 0) return res.status(404).json({ error: 'Bill not found' });
         const bill = billResult.rows[0];
-        
-        if (bill.payment_status === 'PAID') {
-            return res.status(400).json({ error: 'Bill already paid' });
-        }
+        if (bill.payment_status === 'PAID') return res.status(400).json({ error: 'Bill already paid' });
         
         const transactionId = `TXN${Date.now()}${Math.floor(Math.random() * 1000)}`;
         const paymentResult = await pool.query(`
@@ -255,31 +270,22 @@ router.post('/pay', verifyToken, async (req, res) => {
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
             RETURNING *
         `, [billId, bill.account_number, amount, transactionId, paymentMethod || 'CREDIT_CARD', cardLast4 || null, cardHolder || null, null]);
-        // Generate receipt PDF
         const payment = paymentResult.rows[0];
+        
         const receiptPath = `/receipts/${payment.id}_${Date.now()}.pdf`;
         const fullReceiptPath = path.join(__dirname, '..', 'public', 'receipts', `${payment.id}_${Date.now()}.pdf`);
-
-        // Ensure directory exists
         await fs.ensureDir(path.dirname(fullReceiptPath));
-
-        // Get customer details
+        
         const customerResult = await pool.query('SELECT * FROM customers WHERE account_number = $1', [bill.account_number]);
         const customer = customerResult.rows[0] || {};
-
-        // Create PDF
+        
         const doc = new PDFDocument({ margin: 50 });
         doc.pipe(fs.createWriteStream(fullReceiptPath));
-
-        // Header
         doc.fontSize(20).text('WASCO Water Authority', { align: 'center' });
         doc.fontSize(12).text('Payment Receipt', { align: 'center' });
         doc.moveDown();
-
-        // Receipt details
         doc.fontSize(14).text(`Receipt #${payment.id}`, { continued: true }).text(`Date: ${new Date().toLocaleDateString()}`);
         doc.moveDown();
-
         doc.text(`Transaction ID: ${transactionId}`);
         doc.text(`Account Number: ${bill.account_number}`);
         doc.text(`Customer: ${customer.name || 'N/A'} | ${customer.phone || 'N/A'}`);
@@ -290,34 +296,23 @@ router.post('/pay', verifyToken, async (req, res) => {
         if (cardLast4) doc.text(`Card Last 4: **** **** **** ${cardLast4}`);
         if (cardHolder) doc.text(`Card Holder: ${cardHolder}`);
         doc.moveDown(0.5);
-
         doc.fontSize(16).text(`Amount Paid: Maloti M ${parseFloat(amount).toLocaleString()}`, { align: 'right' });
         doc.moveDown();
-
         doc.text('Thank you for your payment!', { align: 'center' });
         doc.text('This is your official receipt.', { underline: true, align: 'center' });
         doc.moveDown();
-
-        // Footer
         doc.fontSize(10).text('WASCO Customer Service: +265 1 123 456', { align: 'center' });
         doc.text('Email: support@wasco.mw', { align: 'center' });
-
         doc.end();
-
-        // Update payment with receipt path
+        
         await pool.query('UPDATE payments SET receipt_path = $1 WHERE id = $2', [receiptPath, payment.id]);
-
-        await pool.query(`
-            UPDATE bills 
-            SET payment_status = 'PAID', payment_date = CURRENT_DATE
-            WHERE id = $1
-        `, [billId]);
+        await pool.query('UPDATE bills SET payment_status = $1, payment_date = CURRENT_DATE WHERE id = $2', ['PAID', billId]);
         
         res.json({ 
             success: true, 
             payment: { ...payment, receipt_path: receiptPath },
             message: 'Payment successful. Receipt generated.',
-            receipt_url: `http://localhost:5000${receiptPath}` // Adjust for production
+            receipt_url: `http://localhost:5000${receiptPath}`
         });
     } catch (error) {
         console.error('Payment error:', error);
@@ -327,10 +322,7 @@ router.post('/pay', verifyToken, async (req, res) => {
 
 // Get all bills (Admin/Manager only)
 router.get('/all', verifyToken, async (req, res) => {
-    if (req.user.role === 'customer') {
-        return res.status(403).json({ error: 'Unauthorized' });
-    }
-    
+    if (req.user.role === 'customer') return res.status(403).json({ error: 'Unauthorized' });
     try {
         const result = await pool.query(`
             SELECT b.*, c.name as customer_name, c.address
@@ -349,7 +341,6 @@ router.get('/all', verifyToken, async (req, res) => {
 // Get bill summary for a customer
 router.get('/summary/:accountNumber', verifyToken, async (req, res) => {
     const { accountNumber } = req.params;
-    
     try {
         const result = await pool.query(`
             SELECT 
@@ -361,7 +352,6 @@ router.get('/summary/:accountNumber', verifyToken, async (req, res) => {
             FROM bills
             WHERE account_number = $1
         `, [accountNumber]);
-        
         res.json(result.rows[0]);
     } catch (error) {
         console.error('Get summary error:', error);
@@ -372,51 +362,37 @@ router.get('/summary/:accountNumber', verifyToken, async (req, res) => {
 // Record water usage (legacy endpoint)
 router.post('/usage', verifyToken, async (req, res) => {
     const { accountNumber, month, meterReading } = req.body;
-    
-    if (!accountNumber || !month || !meterReading) {
-        return res.status(400).json({ error: 'Account number, month, and meter reading are required' });
-    }
-    
+    if (!accountNumber || !month || !meterReading) return res.status(400).json({ error: 'Account number, month, and meter reading are required' });
     try {
         const previousResult = await pool.query(`
             SELECT meter_reading FROM water_usage 
             WHERE account_number = $1 
             ORDER BY month DESC LIMIT 1
         `, [accountNumber]);
-        
         const previousReading = previousResult.rows[0]?.meter_reading || 0;
         const consumption = meterReading - previousReading;
-        
         const result = await pool.query(`
             INSERT INTO water_usage (account_number, month, meter_reading, previous_reading, consumption)
             VALUES ($1, $2, $3, $4, $5)
             RETURNING *
         `, [accountNumber, month, meterReading, previousReading, consumption]);
-        
         const amount = calculateBill(consumption);
         const billNumber = `WASCO${new Date().getFullYear()}${Math.floor(Math.random() * 10000)}`;
-        
         const billResult = await pool.query(`
             INSERT INTO bills (bill_number, account_number, month, consumption, total_amount, due_date, payment_status)
             VALUES ($1, $2, $3, $4, $5, CURRENT_DATE + INTERVAL '30 days', 'UNPAID')
             RETURNING *
         `, [billNumber, accountNumber, month, consumption, amount]);
-        
-        res.json({ 
-            success: true, 
-            usage: result.rows[0], 
-            bill: billResult.rows[0]
-        });
+        res.json({ success: true, usage: result.rows[0], bill: billResult.rows[0] });
     } catch (error) {
         console.error('Record usage error:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
-// Get water usage history
+// Get water usage history for a customer
 router.get('/usage/:accountNumber', verifyToken, async (req, res) => {
     const { accountNumber } = req.params;
-    
     try {
         const result = await pool.query(`
             SELECT * FROM water_usage 
@@ -424,7 +400,6 @@ router.get('/usage/:accountNumber', verifyToken, async (req, res) => {
             ORDER BY month DESC
             LIMIT 12
         `, [accountNumber]);
-        
         res.json(result.rows);
     } catch (error) {
         console.error('Get usage error:', error);
@@ -432,12 +407,9 @@ router.get('/usage/:accountNumber', verifyToken, async (req, res) => {
     }
 });
 
-// GET ALL WATER USAGE (Admin/Manager only) - FIXED ENDPOINT
+// GET ALL WATER USAGE (Admin/Manager only)
 router.get('/water-usage/all', verifyToken, async (req, res) => {
-    if (req.user.role === 'customer') {
-        return res.status(403).json({ error: 'Unauthorized' });
-    }
-    
+    if (req.user.role === 'customer') return res.status(403).json({ error: 'Unauthorized' });
     try {
         const result = await pool.query(`
             SELECT wu.*, c.name as customer_name
@@ -455,7 +427,6 @@ router.get('/water-usage/all', verifyToken, async (req, res) => {
 // GET WATER USAGE FOR SPECIFIC CUSTOMER
 router.get('/water-usage/customer/:accountNumber', verifyToken, async (req, res) => {
     const { accountNumber } = req.params;
-    
     try {
         const result = await pool.query(`
             SELECT * FROM water_usage 
@@ -469,52 +440,36 @@ router.get('/water-usage/customer/:accountNumber', verifyToken, async (req, res)
     }
 });
 
-// RECORD NEW WATER USAGE - FIXED ENDPOINT
+// RECORD NEW WATER USAGE (without auto-bill)
 router.post('/water-usage', verifyToken, async (req, res) => {
     const { account_number, month, meter_reading } = req.body;
-    
-    if (!account_number || !month || !meter_reading) {
-        return res.status(400).json({ error: 'Account number, month, and meter reading are required' });
-    }
-    
+    if (!account_number || !month || !meter_reading) return res.status(400).json({ error: 'Account number, month, and meter reading are required' });
     try {
-        // Get previous reading
         const previousResult = await pool.query(`
             SELECT meter_reading FROM water_usage 
             WHERE account_number = $1 
             ORDER BY month DESC LIMIT 1
         `, [account_number]);
-        
         const previous_reading = previousResult.rows[0]?.meter_reading || 0;
-        
-        // Check if entry already exists for this month
         const existing = await pool.query(`
             SELECT id FROM water_usage 
             WHERE account_number = $1 AND month = $2
         `, [account_number, month]);
-        
-        if (existing.rows.length > 0) {
-            return res.status(400).json({ error: 'Water usage already recorded for this month' });
-        }
-        
+        if (existing.rows.length > 0) return res.status(400).json({ error: 'Water usage already recorded for this month' });
         const result = await pool.query(`
             INSERT INTO water_usage (account_number, month, meter_reading, previous_reading)
             VALUES ($1, $2, $3, $4)
             RETURNING *
         `, [account_number, month, meter_reading, previous_reading]);
-        
-        // Auto-generate bill based on consumption
         const consumption = meter_reading - previous_reading;
         if (consumption > 0) {
             const amount = calculateBill(consumption);
             const billNumber = `WASCO${new Date().getFullYear()}${Date.now()}`;
-            
             await pool.query(`
                 INSERT INTO bills (bill_number, account_number, month, consumption, total_amount, due_date, payment_status)
                 VALUES ($1, $2, $3, $4, $5, CURRENT_DATE + INTERVAL '30 days', 'UNPAID')
             `, [billNumber, account_number, month, consumption, amount]);
         }
-        
         res.json({ success: true, usage: result.rows[0] });
     } catch (error) {
         console.error('Error recording water usage:', error);
@@ -525,27 +480,12 @@ router.post('/water-usage', verifyToken, async (req, res) => {
 // Generate sample water usage data
 router.post('/water-usage/generate-sample', verifyToken, async (req, res) => {
     const { accountNumber } = req.body;
-    
-    if (!accountNumber) {
-        return res.status(400).json({ error: 'Account number is required' });
-    }
-    
+    if (!accountNumber) return res.status(400).json({ error: 'Account number is required' });
     try {
-        // Check if usage already exists
-        const existing = await pool.query(
-            'SELECT COUNT(*) FROM water_usage WHERE account_number = $1',
-            [accountNumber]
-        );
-        
+        const existing = await pool.query('SELECT COUNT(*) FROM water_usage WHERE account_number = $1', [accountNumber]);
         if (parseInt(existing.rows[0].count) > 0) {
-            return res.json({ 
-                success: true, 
-                message: 'Usage data already exists',
-                count: existing.rows[0].count
-            });
+            return res.json({ success: true, message: 'Usage data already exists', count: existing.rows[0].count });
         }
-        
-        // Generate sample water usage for last 6 months
         const sampleData = [
             { month: '2025-01-01', reading: 1250, previous: 1200 },
             { month: '2025-02-01', reading: 1305, previous: 1250 },
@@ -554,7 +494,6 @@ router.post('/water-usage/generate-sample', verifyToken, async (req, res) => {
             { month: '2025-05-01', reading: 1490, previous: 1450 },
             { month: '2025-06-01', reading: 1520, previous: 1490 }
         ];
-        
         const inserted = [];
         for (const data of sampleData) {
             const consumption = data.reading - data.previous;
@@ -564,22 +503,14 @@ router.post('/water-usage/generate-sample', verifyToken, async (req, res) => {
                 RETURNING *
             `, [accountNumber, data.month, data.reading, data.previous, consumption]);
             inserted.push(result.rows[0]);
-            
-            // Also generate corresponding bills
             const amount = calculateBill(consumption);
             const billNumber = `WASCO${new Date(data.month).getFullYear()}${Math.floor(Math.random() * 10000)}`;
-            
             await pool.query(`
                 INSERT INTO bills (bill_number, account_number, month, consumption, total_amount, due_date, payment_status)
                 VALUES ($1, $2, $3, $4, $5, $6, $7)
             `, [billNumber, accountNumber, data.month, consumption, amount, new Date(data.month), 'UNPAID']);
         }
-        
-        res.json({ 
-            success: true, 
-            message: `Generated ${inserted.length} months of water usage data`,
-            count: inserted.length
-        });
+        res.json({ success: true, message: `Generated ${inserted.length} months of water usage data`, count: inserted.length });
     } catch (error) {
         console.error('Generate sample usage error:', error);
         res.status(500).json({ error: error.message });

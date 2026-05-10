@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import HomePage from './pages/HomePage';               // ← new homepage
+import HomePage from './pages/HomePage';       // your new homepage
 import Login from './pages/Login';
 import AdminDashboard from './pages/AdminDashboard';
 import ManagerDashboard from './pages/ManagerDashboard';
 import CustomerDashboard from './pages/CustomerDashboard';
 import './index.css';
-import 'bootstrap/dist/css/bootstrap.min.css';
 import 'bootstrap/dist/js/bootstrap.bundle.min.js';
+
 
 function App() {
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem('darkMode') === 'true');
@@ -18,15 +18,10 @@ function App() {
 
   useEffect(() => {
     localStorage.setItem('darkMode', darkMode);
-    if (darkMode) {
-      document.body.classList.add('dark-mode');
-    } else {
-      document.body.classList.remove('dark-mode');
-    }
+    document.body.classList.toggle('dark-mode', darkMode);
   }, [darkMode]);
 
   const toggleDarkMode = () => setDarkMode(!darkMode);
-
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
@@ -34,6 +29,7 @@ function App() {
     window.location.href = '/login';
   };
 
+  // Role‑based dashboard (used after login)
   const getDashboard = () => {
     if (!user) return <Navigate to="/login" />;
     switch (user.role) {
@@ -57,7 +53,7 @@ function App() {
         {/* Authentication */}
         <Route path="/login" element={<Login setUser={setUser} darkMode={darkMode} toggleDarkMode={toggleDarkMode} />} />
 
-        {/* Main dashboard (role‑based) */}
+        {/* Protected dashboard (after login) */}
         <Route path="/dashboard" element={getDashboard()} />
 
         {/* Direct role‑based routes (optional, for backward compatibility) */}
