@@ -52,7 +52,7 @@ function AdminDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
   const handleDeleteUser = async (id) => { if (window.confirm('Are you sure?')) { try { await api.delete(`/users/${id}`); showAlert('Deleted', 'success'); fetchData(); } catch (e) { showAlert('Error', 'danger'); } } };
   const handleRecordPayment = async () => { if (!paymentForm.billId || !paymentForm.amount) { showAlert('Select bill and amount', 'warning'); return; } setLoading(true); try { await api.post('/bills/pay', { billId: parseInt(paymentForm.billId), amount: parseFloat(paymentForm.amount), paymentMethod: paymentForm.paymentMethod, cardLast4: paymentForm.cardLast4, cardHolder: paymentForm.cardHolder }); showAlert('Recorded', 'success'); setShowPaymentModal(false); fetchData(); } catch (e) { showAlert('Error', 'danger'); } finally { setLoading(false); } };
 
-  // Generate Bill using embedded SQL stored procedure
+  // Generate Bill using embedded SQL stored procedure – now refreshes both bills and payments pages
   const handleGenerateBill = async () => {
     if (!billForm.accountNumber || !billForm.billingMonth || !billForm.currentReading) {
       showAlert('Please fill account number, billing month, and current reading', 'warning');
@@ -60,9 +60,10 @@ function AdminDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
     }
     setGenerating(true);
     try {
+      const fullDate = billForm.billingMonth + '-01';
       const response = await api.post('/bills/generate-from-readings', {
         accountNumber: billForm.accountNumber,
-        billingMonth: billForm.billingMonth,
+        billingMonth: fullDate,
         currentReading: parseInt(billForm.currentReading),
         previousReading: billForm.previousReading ? parseInt(billForm.previousReading) : null
       });
@@ -70,8 +71,10 @@ function AdminDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
         showAlert(`Bill ${response.data.bill.bill_number} generated for M ${response.data.bill.total_amount}`, 'success');
         setShowBillModal(false);
         setBillForm({ accountNumber: '', billingMonth: '', currentReading: '', previousReading: '' });
-        // Refresh bills if currently on bills page
-        if (activePage === 'bills') fetchData();
+        // Refresh data if currently on bills or payments (where unpaid bills are shown)
+        if (activePage === 'bills' || activePage === 'payments') {
+          fetchData();
+        }
       }
     } catch (error) {
       showAlert('Error generating bill: ' + (error.response?.data?.error || error.message), 'danger');
@@ -257,7 +260,7 @@ function AdminDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
         </Container>
       </div>
 
-      {/* Add User Modal (unchanged) */}
+      {/* Add User Modal */}
       <Modal show={showUserModal} onHide={() => setShowUserModal(false)}>
         <Modal.Header closeButton><Modal.Title>Add New User</Modal.Title></Modal.Header>
         <Modal.Body>
@@ -271,7 +274,7 @@ function AdminDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
         <Modal.Footer><Button variant="secondary" onClick={() => setShowUserModal(false)}>Cancel</Button><Button variant="primary" onClick={handleCreateUser}>Add User</Button></Modal.Footer>
       </Modal>
 
-      {/* Record Payment Modal (unchanged) */}
+      {/* Record Payment Modal */}
       <Modal show={showPaymentModal} onHide={() => setShowPaymentModal(false)}>
         <Modal.Header closeButton><Modal.Title>Record Payment</Modal.Title></Modal.Header>
         <Modal.Body>
@@ -284,7 +287,7 @@ function AdminDashboard({ user, onLogout, darkMode, toggleDarkMode }) {
         <Modal.Footer><Button variant="secondary" onClick={() => setShowPaymentModal(false)}>Cancel</Button><Button variant="success" onClick={handleRecordPayment}><FaCheckCircle className="me-1" />Record</Button></Modal.Footer>
       </Modal>
 
-      {/* Generate Bill Modal (new) */}
+      {/* Generate Bill Modal */}
       <Modal show={showBillModal} onHide={() => setShowBillModal(false)} size="lg">
         <Modal.Header closeButton>
           <Modal.Title>Generate New Bill (Embedded SQL)</Modal.Title>

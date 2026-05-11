@@ -1,31 +1,41 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Table, Button, Badge, Spinner, Alert, Modal, Form, Row, Col } from 'react-bootstrap';
-import { FaCreditCard, FaCheckCircle, FaEye } from 'react-icons/fa';
+import { FaCreditCard, FaCheckCircle, FaEye, FaSync } from 'react-icons/fa';
 import api from '../services/api';
 import PaymentModal from './PaymentModal';
 
 function MyBills({ accountNumber, darkMode }) {
   const [bills, setBills] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [selectedBill, setSelectedBill] = useState(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [paymentAmount, setPaymentAmount] = useState(0);
-  const [paymentMethod, setPaymentMethod] = useState('credit_card');
   const [alert, setAlert] = useState({ show: false, message: '', variant: 'success' });
 
   useEffect(() => {
     if (accountNumber) {
       fetchBills();
+    } else {
+      setLoading(false);
+      setError('No account number found. Please complete your customer profile.');
     }
   }, [accountNumber]);
 
   const fetchBills = async () => {
     setLoading(true);
+    setError(null);
     try {
+      console.log('Fetching bills for account:', accountNumber);
       const response = await api.get(`/bills/customer/${accountNumber}`);
+      console.log('Bills response:', response.data);
       setBills(response.data || []);
+      if (response.data && response.data.length === 0) {
+        setError('No bills found for this account.');
+      }
     } catch (error) {
-      showAlert('Error fetching bills', 'danger');
+      console.error('Error fetching bills:', error);
+      setError(error.response?.data?.error || error.message || 'Failed to load bills');
+      showAlert(error.response?.data?.error || 'Error fetching bills', 'danger');
     } finally {
       setLoading(false);
     }
@@ -36,25 +46,9 @@ function MyBills({ accountNumber, darkMode }) {
     setTimeout(() => setAlert({ show: false, message: '', variant: 'success' }), 3000);
   };
 
-  const handlePayment = async () => {
-    if (!selectedBill) return;
-    
-    try {
-      const response = await api.post('/bills/pay', {
-        billId: selectedBill.id,
-        amount: paymentAmount,
-        paymentMethod: paymentMethod
-      });
-      
-      if (response.data.success) {
-        showAlert(`Payment of M ${paymentAmount} successful!`, 'success');
-        setShowPaymentModal(false);
-        setSelectedBill(null);
-        fetchBills();
-      }
-    } catch (error) {
-      showAlert('Payment failed: ' + (error.response?.data?.error || 'Please try again'), 'danger');
-    }
+  const handlePaymentSuccess = () => {
+    showAlert('Payment successful!', 'success');
+    fetchBills();
   };
 
   const getStatusBadge = (status) => {
@@ -81,15 +75,42 @@ function MyBills({ accountNumber, darkMode }) {
       )}
 
       <Card>
-        <Card.Header>
+        <Card.Header className="d-flex justify-content-between align-items-center">
           <h5 className="mb-0">My Bills</h5>
+          <Button
+            variant="outline-secondary"
+            size="sm"
+            onClick={fetchBills}
+            disabled={loading}
+          >
+            <FaSync className="me-1" /> Refresh
+          </Button>
         </Card.Header>
         <Card.Body>
+          {/* Debug info – remove after fixing */}
+          <div className="alert alert-info small">
+            <strong>Account Number:</strong> {accountNumber || 'Not set'}
+          </div>
+
+          {error && (
+            <Alert variant="warning" className="mb-3">
+              {error}
+            </Alert>
+          )}
+
           {bills.length === 0 ? (
             <div className="text-center py-5">
               <FaEye size={50} className="text-muted mb-3" />
               <p>No bills available</p>
-              <small className="text-muted">Your water bills will appear here once generated</small>
+              {accountNumber ? (
+                <small className="text-muted">
+                  Try generating a bill from the admin dashboard or contact support.
+                </small>
+              ) : (
+                <small className="text-muted">
+                  Please complete your customer profile first.
+                </small>
+              )}
             </div>
           ) : (
             <Table striped hover responsive>
@@ -122,7 +143,6 @@ function MyBills({ accountNumber, darkMode }) {
                           variant="primary"
                           onClick={() => {
                             setSelectedBill(bill);
-                            setPaymentAmount(bill.total_amount);
                             setShowPaymentModal(true);
                           }}
                         >
@@ -143,15 +163,11 @@ function MyBills({ accountNumber, darkMode }) {
         </Card.Body>
       </Card>
 
-      {/* Payment Modal */}
       <PaymentModal
         show={showPaymentModal}
         onHide={() => setShowPaymentModal(false)}
         bill={selectedBill}
-        onPaymentSuccess={() => {
-          showAlert('Payment successful!', 'success');
-          fetchBills();
-        }}
+        onPaymentSuccess={handlePaymentSuccess}
       />
     </>
   );

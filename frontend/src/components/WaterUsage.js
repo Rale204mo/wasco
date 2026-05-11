@@ -4,9 +4,6 @@ import { FaPlus, FaTint, FaChartLine, FaDownload, FaSync } from 'react-icons/fa'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import api from '../services/api';
 
-
-
-
 function WaterUsage({ darkMode }) {
   const [usage, setUsage] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -24,7 +21,6 @@ function WaterUsage({ darkMode }) {
     fetchCustomers();
   }, []);
 
-  // FIXED: Use correct endpoint /bills/water-usage/all
   const fetchUsage = async () => {
     setLoading(true);
     try {
@@ -54,15 +50,22 @@ function WaterUsage({ darkMode }) {
     setTimeout(() => setAlert({ show: false, message: '', variant: 'success' }), 3000);
   };
 
-  // FIXED: Use correct endpoint /bills/water-usage
   const handleSave = async () => {
     if (!formData.account_number || !formData.month || !formData.meter_reading) {
       showAlert('Please fill all fields', 'warning');
       return;
     }
 
+    // ✅ Convert "YYYY-MM" to "YYYY-MM-01" (first day of month)
+    const fullDate = formData.month + '-01';
+
     try {
-      const response = await api.post('/bills/water-usage', formData);
+      const response = await api.post('/bills/water-usage', {
+        account_number: formData.account_number,
+        month: fullDate,
+        meter_reading: parseInt(formData.meter_reading)
+      });
+
       if (response.data.success) {
         showAlert('Water usage recorded successfully! Bill generated automatically.', 'success');
         setShowModal(false);
@@ -73,14 +76,20 @@ function WaterUsage({ darkMode }) {
       }
     } catch (error) {
       console.error('Save error:', error);
-      showAlert('Error recording usage: ' + (error.response?.data?.error || error.message), 'danger');
+      const errorMsg = error.response?.data?.error || error.message;
+      if (errorMsg.includes('already recorded')) {
+        showAlert(`Water usage already recorded for ${formData.month}. Please edit existing record or choose a different month.`, 'warning');
+      } else {
+        showAlert('Error recording usage: ' + errorMsg, 'danger');
+      }
     }
   };
 
   const getChartData = () => {
     if (!usage || usage.length === 0) return [];
-    const last6Months = usage.slice(-6);
-    return last6Months.map(u => ({
+    // Sort by month ascending for chart
+    const sorted = [...usage].sort((a, b) => new Date(a.month) - new Date(b.month));
+    return sorted.slice(-6).map(u => ({
       month: new Date(u.month).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }),
       consumption: u.consumption || (u.meter_reading - (u.previous_reading || 0)),
       reading: u.meter_reading
@@ -211,11 +220,6 @@ function WaterUsage({ darkMode }) {
                   <option disabled>No customers found. Please create a customer profile first.</option>
                 )}
               </Form.Select>
-              {(!customers || customers.length === 0) && (
-                <Form.Text className="text-warning">
-                  No customers available. Please create a customer profile first.
-                </Form.Text>
-              )}
             </Form.Group>
             <Form.Group className="mb-3">
               <Form.Label>Billing Month</Form.Label>
@@ -225,6 +229,9 @@ function WaterUsage({ darkMode }) {
                 onChange={(e) => setFormData({...formData, month: e.target.value})}
                 required
               />
+              <Form.Text className="text-muted">
+                Select the month for this reading. The day will be set to the 1st.
+              </Form.Text>
             </Form.Group>
             <Form.Group className="mb-3">
               <Form.Label>Current Meter Reading (m³)</Form.Label>
@@ -242,9 +249,7 @@ function WaterUsage({ darkMode }) {
           </Form>
         </Modal.Body>
         <Modal.Footer>
-          <Button variant="secondary" onClick={() => setShowModal(false)}>
-            Cancel
-          </Button>
+          <Button variant="secondary" onClick={() => setShowModal(false)}>Cancel</Button>
           <Button variant="primary" onClick={handleSave}>
             <FaPlus className="me-1" /> Save Reading
           </Button>
